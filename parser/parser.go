@@ -3,6 +3,7 @@ package parser
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 )
 
@@ -152,6 +153,10 @@ type ControlEvent struct {
 	Control byte
 }
 
+func (c *ControlEvent) String() string {
+	return fmt.Sprintf("CTL: %#v (0x%x)", string(c.Control), c.Control)
+}
+
 func (p *Parser) readControl(b byte) error {
 	return p.handler.HandleEvent(&ControlEvent{b})
 }
@@ -271,6 +276,25 @@ type CSIEvent struct {
 	Leader   []byte
 	Args     []int
 	Intermed []byte
+}
+
+func (c *CSIEvent) CSICommand() CSICommand {
+	idx := CSICommand(c.Command)
+	if len(c.Leader) == 1 {
+		idx = LEADER(c.Leader[0], c.Command)
+	}
+
+	if len(c.Intermed) == 1 {
+		idx = INTERMED(c.Intermed[0], c.Command)
+	}
+
+	return idx
+}
+
+func (c *CSIEvent) String() string {
+	cmd := c.CSICommand()
+
+	return fmt.Sprintf("CSI: %s (0x%x) Leader=%#v Args=%#v Intermed=%#v", cmd.String(), c.Command, c.Leader, c.Args, c.Intermed)
 }
 
 func (p *Parser) readCSI() error {
