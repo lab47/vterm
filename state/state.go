@@ -16,6 +16,80 @@ type Rect struct {
 	Start, End Pos
 }
 
+func (s Rect) ScrollUp(dist int) ScrollRect {
+	x := ScrollRect{Rect: s}
+	x.Vertical = ScrollUp
+	x.VerticalDistance = dist
+	return x
+}
+
+func (s Rect) ScrollDown(dist int) ScrollRect {
+	x := ScrollRect{Rect: s}
+	x.Vertical = ScrollDown
+	x.VerticalDistance = dist
+	return x
+}
+
+func (s Rect) ScrollLeft(dist int) ScrollRect {
+	x := ScrollRect{Rect: s}
+	x.Horizontal = ScrollLeft
+	x.HorizontalDistance = dist
+	return x
+}
+
+func (s Rect) ScrollRight(dist int) ScrollRect {
+	x := ScrollRect{Rect: s}
+	x.Horizontal = ScrollRight
+	x.HorizontalDistance = dist
+	return x
+}
+
+type ScrollDirection int
+
+const (
+	ScrollNone  ScrollDirection = iota // don't scroll
+	ScrollUp                           // move the content at the top of the rect to the bottom
+	ScrollDown                         // move the content at the bottom of the rect to the top
+	ScrollRight                        // move the content on the right side of the rect to the left side
+	ScrollLeft                         // move the content on the left side of the rect to the right side
+)
+
+type ScrollRect struct {
+	Rect
+	Vertical           ScrollDirection
+	VerticalDistance   int
+	Horizontal         ScrollDirection
+	HorizontalDistance int
+}
+
+func (s ScrollRect) Up(dist int) ScrollRect {
+	x := s
+	x.Vertical = ScrollUp
+	x.VerticalDistance = dist
+	return x
+}
+
+func (s ScrollRect) Down(dist int) ScrollRect {
+	x := s
+	x.Vertical = ScrollDown
+	x.VerticalDistance = dist
+	return x
+}
+
+func (s ScrollRect) Left(dist int) ScrollRect {
+	x := s
+	x.Horizontal = ScrollLeft
+	x.HorizontalDistance = dist
+	return x
+}
+
+func (s ScrollRect) Right(dist int) ScrollRect {
+	x := s
+	x.Horizontal = ScrollRight
+	x.HorizontalDistance = dist
+	return x
+}
+
 type CellRune struct {
 	Rune  rune
 	Width int
@@ -25,24 +99,75 @@ type Output interface {
 	SetCell(pos Pos, val CellRune) error
 	AppendCell(pos Pos, r rune) error
 	ClearRect(r Rect) error
+	ScrollRect(s ScrollRect) error
+	Output(data []byte) error
+	SetTermProp(prop string, val interface{}) error
 }
+
+type modes struct {
+	insert          bool
+	newline         bool
+	cursor          bool
+	origin          bool
+	autowrap        bool
+	leftrightmargin bool
+	report_focus    bool
+	bracketpaste    bool
+}
+
+const (
+	MouseNone int = iota
+	MouseClick
+	MouseDrag
+	MouseMove
+)
+
+const (
+	MouseX10 int = iota
+	MouseUTF8
+	MouseSGR
+	MouseRXVT
+)
 
 type State struct {
 	rows, cols int
 	cursor     Pos
 	output     Output
 
-	lastPos Pos
+	lastPos  Pos
+	tabStops []bool
+
+	modes         modes
+	mouseProtocol int
+	savedCursor   Pos
 }
 
 func NewState(rows, cols int, output Output) (*State, error) {
 	screen := &State{
-		rows:   rows,
-		cols:   cols,
-		output: output,
+		rows:     rows,
+		cols:     cols,
+		output:   output,
+		tabStops: make([]bool, cols),
+	}
+
+	err := screen.Reset()
+	if err != nil {
+		return nil, err
 	}
 
 	return screen, nil
+}
+
+func (s *State) Reset() error {
+	for col := 0; col < s.cols; col++ {
+		if col%8 == 0 {
+			s.tabStops[col] = true
+		} else {
+			s.tabStops[col] = false
+		}
+	}
+
+	return nil
 }
 
 func (s *State) HandleEvent(gev parser.Event) error {
@@ -143,14 +268,30 @@ var csiHandlers = map[parser.CSICommand]func(*State, *parser.CSIEvent) error{
 	parser.CHT: (*State).cursorTabForward,
 	parser.CBT: (*State).cursorTabBackward,
 
-	parser.ICH: (*State).insertBlackChars,
+	parser.ICH: (*State).insertBlankChars,
 	parser.ED:  (*State).eraseDisplay,
+	parser.EL:  (*State).eraseLine,
+	parser.IL:  (*State).insertLines,
+	parser.DL:  (*State).deleteLines,
+	parser.DCH: (*State).deleteChars,
+	parser.SU:  (*State).scrollUp,
+	parser.SD:  (*State).scrollDown,
+	parser.ECH: (*State).eraseChars,
+
+	parser.DA:    (*State).emitDeviceAttributes,
+	parser.DA_LT: (*State).emitDeviceAttributes2,
+
+	parser.TBC: (*State).clearTabStop,
+
+	parser.SM:   (*State).setMode,
+	parser.SM_Q: (*State).setDecMode,
 }
 
 func (s *State) handleCSI(ev *parser.CSIEvent) error {
-	f, ok := csiHandlers[ev.CSICommand()]
+	cmd := ev.CSICommand()
+	f, ok := csiHandlers[cmd]
 	if !ok {
-		return fmt.Errorf("unhandled CSI command: %x", ev.Command)
+		return fmt.Errorf("unhandled CSI command: (%s) %x", cmd, ev.Command)
 	}
 
 	return f(s, ev)
@@ -207,8 +348,14 @@ func (s *State) cursorMoveCol(ev *parser.CSIEvent) error {
 func (s *State) cursorMoveRow(ev *parser.CSIEvent) error {
 	pos := s.cursor
 
-	if len(ev.Args) > 0 && ev.Args[0] > 0 {
-		pos.Row = ev.Args[0] - 1
+	row := 1
+
+	if len(ev.Args) > 0 {
+		row = ev.Args[0]
+	}
+
+	if row > 0 {
+		pos.Row = row - 1
 	}
 
 	if pos.Row < 0 {
@@ -387,21 +534,19 @@ func (s *State) cursorPrevLine(ev *parser.CSIEvent) error {
 	return nil
 }
 
-func (s *State) insertBlackChars(ev *parser.CSIEvent) error {
+func (s *State) insertBlankChars(ev *parser.CSIEvent) error {
 	start := s.cursor
 
 	end := start
+
+	end.Col = s.cols - 1
+
+	dist := 1
 	if len(ev.Args) > 0 {
-		end.Col += ev.Args[0]
-	} else {
-		end.Col++
+		dist = ev.Args[0]
 	}
 
-	if end.Col > s.cols {
-		end.Col = s.cols
-	}
-
-	return s.output.ClearRect(Rect{start, end})
+	return s.output.ScrollRect(Rect{start, end}.ScrollRight(dist))
 }
 
 func (s *State) eraseDisplay(ev *parser.CSIEvent) error {
@@ -410,6 +555,9 @@ func (s *State) eraseDisplay(ev *parser.CSIEvent) error {
 	if len(ev.Args) > 0 {
 		mode = ev.Args[0]
 	}
+
+	// TODO support the ? leader to indicate the DEC selective erase, which
+	// only erases characters that were previously defined by DECSCA.
 
 	switch mode {
 	case 0: // from cursor to end of display
@@ -450,6 +598,235 @@ func (s *State) eraseDisplay(ev *parser.CSIEvent) error {
 		start.Col = 0
 
 		return s.output.ClearRect(Rect{start, end})
+	case 2: // the whole display
+		start := Pos{0, 0}
+		end := Pos{s.rows - 1, s.cols - 1}
+		return s.output.ClearRect(Rect{start, end})
+	}
+
+	return nil
+}
+
+func (s *State) eraseLine(ev *parser.CSIEvent) error {
+	mode := 0
+
+	if len(ev.Args) > 0 {
+		mode = ev.Args[0]
+	}
+
+	// TODO support the ? leader to indicate the DEC selective erase, which
+	// only erases characters that were previously defined by DECSCA.
+
+	start := s.cursor
+	end := start
+
+	switch mode {
+	case 0: // from cursor to end of line
+		end.Col = s.cols - 1
+	case 1: // from start to cursor
+		start.Col = 0
+	case 2: // the whole display
+		start.Col = 0
+		end.Col = s.cols - 1
+	default:
+		return nil
+	}
+
+	return s.output.ClearRect(Rect{start, end})
+}
+
+func (s *State) insertLines(ev *parser.CSIEvent) error {
+	var dist int
+
+	if len(ev.Args) > 0 {
+		dist = ev.Args[0]
+	}
+
+	if dist == 0 {
+		dist = 1
+	}
+
+	start := s.cursor
+	start.Col = 0
+
+	end := Pos{s.rows - 1, s.cols - 1}
+
+	return s.output.ScrollRect(Rect{start, end}.ScrollDown(dist))
+}
+
+func (s *State) deleteLines(ev *parser.CSIEvent) error {
+	var dist int
+
+	if len(ev.Args) > 0 {
+		dist = ev.Args[0]
+	}
+
+	if dist == 0 {
+		dist = 1
+	}
+
+	start := s.cursor
+	start.Col = 0
+
+	end := Pos{s.rows - 1, s.cols - 1}
+
+	return s.output.ScrollRect(Rect{start, end}.ScrollUp(dist))
+}
+
+func (s *State) deleteChars(ev *parser.CSIEvent) error {
+	start := s.cursor
+
+	end := start
+
+	end.Col = s.cols - 1
+
+	dist := 1
+	if len(ev.Args) > 0 {
+		dist = ev.Args[0]
+	}
+
+	return s.output.ScrollRect(Rect{start, end}.ScrollLeft(dist))
+}
+
+func (s *State) scrollUp(ev *parser.CSIEvent) error {
+	start := Pos{0, 0}
+	end := Pos{s.rows - 1, s.cols - 1}
+
+	var dist int
+	if len(ev.Args) > 0 {
+		dist = ev.Args[0]
+	}
+
+	if dist == 0 {
+		dist = 1
+	}
+
+	return s.output.ScrollRect(Rect{start, end}.ScrollUp(dist))
+}
+
+func (s *State) scrollDown(ev *parser.CSIEvent) error {
+	start := Pos{0, 0}
+	end := Pos{s.rows - 1, s.cols - 1}
+
+	var dist int
+	if len(ev.Args) > 0 {
+		dist = ev.Args[0]
+	}
+
+	if dist == 0 {
+		dist = 1
+	}
+
+	return s.output.ScrollRect(Rect{start, end}.ScrollDown(dist))
+}
+
+func (s *State) eraseChars(ev *parser.CSIEvent) error {
+	start := s.cursor
+
+	var dist int
+
+	if len(ev.Args) > 0 {
+		dist = ev.Args[0]
+	}
+
+	if dist == 0 {
+		dist = 1
+	}
+
+	end := start
+	end.Col += (dist - 1)
+
+	return s.output.ClearRect(Rect{start, end})
+}
+
+func (s *State) emitDeviceAttributes(ev *parser.CSIEvent) error {
+	return s.output.Output([]byte("\x9b?1;2c"))
+}
+
+func (s *State) emitDeviceAttributes2(ev *parser.CSIEvent) error {
+	return s.output.Output([]byte("\x9b>0;100;0c"))
+}
+
+func (s *State) clearTabStop(ev *parser.CSIEvent) error {
+	var mode int
+
+	if len(ev.Args) > 0 {
+		mode = ev.Args[0]
+	}
+
+	switch mode {
+	case 0:
+		s.tabStops[s.cursor.Col] = false
+	case 3:
+		s.tabStops = make([]bool, s.cols)
+	}
+
+	return nil
+}
+
+func (s *State) setMode(ev *parser.CSIEvent) error {
+	if len(ev.Args) == 0 {
+		return nil
+	}
+
+	mode := ev.Args[0]
+
+	switch mode {
+	case 4:
+		s.modes.insert = true
+	case 20:
+		s.modes.newline = true
+	}
+
+	return nil
+}
+
+func (s *State) setDecMode(ev *parser.CSIEvent) error {
+	if len(ev.Args) == 0 {
+		return nil
+	}
+
+	mode := ev.Args[0]
+
+	switch mode {
+	case 1:
+		s.modes.cursor = true
+	case 5:
+		return s.output.SetTermProp("reverse", true)
+	case 6:
+		s.modes.origin = true
+		s.cursor = Pos{0, 0}
+	case 7:
+		s.modes.autowrap = true
+	case 12:
+		return s.output.SetTermProp("blink", true)
+	case 25:
+		return s.output.SetTermProp("visible", true)
+	case 69:
+		s.modes.leftrightmargin = true
+	case 1000:
+		return s.output.SetTermProp("mouse", MouseClick)
+	case 1002:
+		return s.output.SetTermProp("mouse", MouseDrag)
+	case 1003:
+		return s.output.SetTermProp("mouse", MouseMove)
+	case 1004:
+		s.modes.report_focus = true
+	case 1005:
+		s.mouseProtocol = MouseUTF8
+	case 1006:
+		s.mouseProtocol = MouseSGR
+	case 1015:
+		s.mouseProtocol = MouseRXVT
+	case 1047:
+		return s.output.SetTermProp("altscreen", true)
+	case 1048:
+		s.savedCursor = s.cursor
+	case 1049:
+		s.savedCursor = s.cursor
+		return s.output.SetTermProp("altscreen", true)
+	case 2004:
+		s.modes.bracketpaste = true
 	}
 
 	return nil
