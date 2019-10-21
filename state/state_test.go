@@ -9,7 +9,7 @@ import (
 	"github.com/vektra/neko"
 )
 
-type termProp struct {
+type prop struct {
 	prop string
 	val  interface{}
 }
@@ -20,7 +20,8 @@ type opSink struct {
 	clearRects []Rect
 	scrollRect []ScrollRect
 	outputs    [][]byte
-	termProps  []termProp
+	termProps  []prop
+	penProps   []prop
 }
 
 func (o *opSink) SetCell(pos Pos, val CellRune) error {
@@ -61,8 +62,13 @@ func (o *opSink) Output(b []byte) error {
 	return nil
 }
 
-func (o *opSink) SetTermProp(prop string, val interface{}) error {
-	o.termProps = append(o.termProps, termProp{prop, val})
+func (o *opSink) SetTermProp(p string, val interface{}) error {
+	o.termProps = append(o.termProps, prop{p, val})
+	return nil
+}
+
+func (o *opSink) SetPenProp(p string, val interface{}) error {
+	o.penProps = append(o.penProps, prop{p, val})
 	return nil
 }
 

@@ -102,6 +102,7 @@ type Output interface {
 	ScrollRect(s ScrollRect) error
 	Output(data []byte) error
 	SetTermProp(prop string, val interface{}) error
+	SetPenProp(prop string, val interface{}) error
 }
 
 type modes struct {
@@ -132,6 +133,7 @@ const (
 type State struct {
 	rows, cols int
 	cursor     Pos
+	pen        PenState
 	output     Output
 
 	lastPos  Pos
@@ -285,6 +287,8 @@ var csiHandlers = map[parser.CSICommand]func(*State, *parser.CSIEvent) error{
 
 	parser.SM:   (*State).setMode,
 	parser.SM_Q: (*State).setDecMode,
+
+	parser.SGR: (*State).selectGraphics,
 }
 
 func (s *State) handleCSI(ev *parser.CSIEvent) error {
