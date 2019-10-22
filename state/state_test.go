@@ -578,7 +578,6 @@ func TestState(t *testing.T) {
 	})
 
 	n.It("can emit a sequence for device attributes", func(t *testing.T) {
-
 		var sink opSink
 
 		screen, err := NewState(25, 80, &sink)
@@ -715,7 +714,7 @@ func TestState(t *testing.T) {
 
 		assert.Equal(t, Pos{0, 0}, screen.cursor)
 
-		assert.False(t, screen.modes.autowrap)
+		screen.modes.autowrap = false
 
 		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{7}})
 		require.NoError(t, err)
@@ -840,6 +839,119 @@ func TestState(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.True(t, screen.modes.bracketpaste)
+	})
+
+	n.It("can emit a sequence for device status", func(t *testing.T) {
+		var sink opSink
+
+		screen, err := NewState(25, 80, &sink)
+		require.NoError(t, err)
+
+		screen.cursor = Pos{1, 3}
+
+		err = screen.HandleEvent(&parser.CSIEvent{Command: 'n', Args: []int{5}})
+		require.NoError(t, err)
+
+		require.Equal(t, 1, len(sink.outputs))
+
+		assert.Equal(t, []byte("\x9b0n"), sink.outputs[0])
+
+		screen.cursor = Pos{10, 20}
+
+		sink.outputs = nil
+
+		err = screen.HandleEvent(&parser.CSIEvent{Command: 'n', Args: []int{6}})
+		require.NoError(t, err)
+
+		require.Equal(t, 1, len(sink.outputs))
+
+		assert.Equal(t, []byte("\x9b11;21R"), sink.outputs[0])
+	})
+
+	n.It("can emit a sequence for device status, dec style", func(t *testing.T) {
+		var sink opSink
+
+		screen, err := NewState(25, 80, &sink)
+		require.NoError(t, err)
+
+		screen.cursor = Pos{1, 3}
+
+		err = screen.HandleEvent(&parser.CSIEvent{Command: 'n', Leader: []byte("?"), Args: []int{5}})
+		require.NoError(t, err)
+
+		require.Equal(t, 1, len(sink.outputs))
+
+		assert.Equal(t, []byte("\x9b?0n"), sink.outputs[0])
+
+		screen.cursor = Pos{10, 20}
+
+		sink.outputs = nil
+
+		err = screen.HandleEvent(&parser.CSIEvent{Command: 'n', Leader: []byte("?"), Args: []int{6}})
+		require.NoError(t, err)
+
+		require.Equal(t, 1, len(sink.outputs))
+
+		assert.Equal(t, []byte("\x9b?11;21R"), sink.outputs[0])
+	})
+
+	n.It("can reset the state", func(t *testing.T) {
+		var sink opSink
+
+		screen, err := NewState(25, 80, &sink)
+		require.NoError(t, err)
+
+		screen.cursor = Pos{1, 3}
+
+		screen.modes.cursor = true
+		screen.modes.autowrap = false
+		screen.modes.insert = true
+		screen.modes.newline = true
+		screen.modes.altscreen = true
+		screen.modes.origin = true
+		screen.modes.leftrightmargin = true
+		screen.modes.bracketpaste = true
+		screen.modes.report_focus = true
+
+		err = screen.HandleEvent(&parser.CSIEvent{Command: 'p', Leader: []byte("!")})
+		require.NoError(t, err)
+
+		assert.Equal(t, Pos{1, 3}, screen.cursor)
+
+		assert.True(t, screen.modes.autowrap)
+		assert.False(t, screen.modes.cursor)
+		assert.False(t, screen.modes.insert)
+		assert.False(t, screen.modes.newline)
+		assert.False(t, screen.modes.altscreen)
+		assert.False(t, screen.modes.origin)
+		assert.False(t, screen.modes.leftrightmargin)
+		assert.False(t, screen.modes.bracketpaste)
+		assert.False(t, screen.modes.report_focus)
+	})
+
+	n.It("can set top and bottom margins", func(t *testing.T) {
+		var sink opSink
+
+		screen, err := NewState(25, 80, &sink)
+		require.NoError(t, err)
+
+		err = screen.HandleEvent(&parser.CSIEvent{Command: 'r'})
+		require.NoError(t, err)
+
+		assert.Equal(t, screen.scrollregion.top, 0)
+		assert.Equal(t, screen.scrollregion.bottom, -1)
+
+		err = screen.HandleEvent(&parser.CSIEvent{Command: 'r', Args: []int{10}})
+		require.NoError(t, err)
+
+		assert.Equal(t, screen.scrollregion.top, 9)
+		assert.Equal(t, screen.scrollregion.bottom, -1)
+
+		err = screen.HandleEvent(&parser.CSIEvent{Command: 'r', Args: []int{20, 15}})
+		require.NoError(t, err)
+
+		assert.Equal(t, screen.scrollregion.top, 19)
+		assert.Equal(t, screen.scrollregion.bottom, 14)
 	})
 
 	n.Meow()

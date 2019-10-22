@@ -114,6 +114,7 @@ type modes struct {
 	leftrightmargin bool
 	report_focus    bool
 	bracketpaste    bool
+	altscreen       bool
 }
 
 const (
@@ -142,6 +143,10 @@ type State struct {
 	modes         modes
 	mouseProtocol int
 	savedCursor   Pos
+
+	scrollregion struct {
+		top, bottom int
+	}
 }
 
 func NewState(rows, cols int, output Output) (*State, error) {
@@ -161,6 +166,7 @@ func NewState(rows, cols int, output Output) (*State, error) {
 }
 
 func (s *State) Reset() error {
+	s.modes = modes{autowrap: true}
 	for col := 0; col < s.cols; col++ {
 		if col%8 == 0 {
 			s.tabStops[col] = true
@@ -168,6 +174,9 @@ func (s *State) Reset() error {
 			s.tabStops[col] = false
 		}
 	}
+
+	s.scrollregion.top = 0
+	s.scrollregion.bottom = -1
 
 	return nil
 }
@@ -185,14 +194,55 @@ func (s *State) HandleEvent(gev parser.Event) error {
 	}
 }
 
+func (s *State) scrollBounds() (int, int) {
+	bottom := s.scrollregion.bottom
+	if bottom <= -1 {
+		bottom = s.rows - 1
+	}
+
+	return s.scrollregion.top, bottom
+}
+
+func (s *State) setCursor(p Pos) {
+	if s.modes.origin {
+		switch {
+		case p.Row < s.scrollregion.top:
+			p.Row = s.scrollregion.top
+		case p.Row >= s.scrollregion.bottom:
+			p.Row = s.scrollregion.bottom
+		}
+	} else {
+		switch {
+		case p.Row < 0:
+			p.Row = 0
+		case p.Row >= s.rows:
+			p.Row = s.rows - 1
+		}
+
+	}
+
+	switch {
+	case p.Col < 0:
+		p.Col = 0
+	case p.Col >= s.cols:
+		p.Col = s.cols - 1
+	}
+
+	s.cursor = p
+}
+
 func (s *State) advancePos() Pos {
 	pos := s.cursor
-	s.cursor.Col++
 
-	if s.cursor.Col >= s.cols {
-		s.cursor.Row++
-		s.cursor.Col = 0
+	newCur := s.cursor
+	newCur.Col++
+
+	if newCur.Col >= s.cols {
+		newCur.Row++
+		newCur.Col = 0
 	}
+
+	s.setCursor(newCur)
 
 	return pos
 }
@@ -226,28 +276,30 @@ func (s *State) writeData(data []byte) error {
 }
 
 func (s *State) handleControl(control byte) error {
+	pos := s.cursor
+
 	switch control {
 	case '\b':
-		pos := s.cursor
-
 		if pos.Col > 0 {
 			pos.Col--
 		}
 
-		s.cursor = pos
 	case '\t':
-		diff := s.cursor.Col % 8
-		s.cursor.Col += (8 - diff)
+		pos.Col++
+		for pos.Col < s.cols {
+			if s.tabStops[pos.Col] {
+				break
+			}
 
-		if s.cursor.Col >= s.cols {
-			s.cursor.Col = s.cols - 1
+			pos.Col++
 		}
 	case '\r':
-		s.cursor.Col = 0
+		pos.Col = 0
 	case '\n':
-		s.cursor.Row++
+		pos.Row++
 	}
 
+	s.setCursor(pos)
 	return nil
 }
 
@@ -289,6 +341,13 @@ var csiHandlers = map[parser.CSICommand]func(*State, *parser.CSIEvent) error{
 	parser.SM_Q: (*State).setDecMode,
 
 	parser.SGR: (*State).selectGraphics,
+
+	parser.DSR:   (*State).statusReport,
+	parser.DSR_Q: (*State).statusReportDec,
+
+	parser.DECSTR: (*State).softReset,
+
+	parser.DECSTBM: (*State).setTopBottomMargin,
 }
 
 func (s *State) handleCSI(ev *parser.CSIEvent) error {
@@ -324,7 +383,11 @@ func (s *State) cursorMove(ev *parser.CSIEvent) error {
 		pos.Col = s.cols - 1
 	}
 
-	s.cursor = pos
+	if s.modes.origin {
+		pos.Row += s.scrollregion.top
+	}
+
+	s.setCursor(pos)
 
 	return nil
 }
@@ -344,7 +407,7 @@ func (s *State) cursorMoveCol(ev *parser.CSIEvent) error {
 		pos.Col = s.cols - 1
 	}
 
-	s.cursor = pos
+	s.setCursor(pos)
 
 	return nil
 }
@@ -368,7 +431,7 @@ func (s *State) cursorMoveRow(ev *parser.CSIEvent) error {
 		pos.Row = s.rows - 1
 	}
 
-	s.cursor = pos
+	s.setCursor(pos)
 
 	return nil
 }
@@ -388,7 +451,7 @@ func (s *State) cursorForward(ev *parser.CSIEvent) error {
 		pos.Col = s.cols - 1
 	}
 
-	s.cursor = pos
+	s.setCursor(pos)
 	return nil
 }
 
@@ -407,7 +470,7 @@ func (s *State) cursorBackward(ev *parser.CSIEvent) error {
 		pos.Col = 0
 	}
 
-	s.cursor = pos
+	s.setCursor(pos)
 	return nil
 }
 
@@ -420,16 +483,17 @@ func (s *State) cursorTabForward(ev *parser.CSIEvent) error {
 		inc = ev.Args[0]
 	}
 
-	diff := pos.Col % 8
-	pos.Col += (8 - diff)
+	for i := 0; i < inc; i++ {
+		for pos.Col < s.cols {
+			pos.Col++
 
-	pos.Col += ((inc - 1) * 8)
-
-	if pos.Col >= s.cols {
-		pos.Col = s.cols - 1
+			if s.tabStops[pos.Col] {
+				break
+			}
+		}
 	}
 
-	s.cursor = pos
+	s.setCursor(pos)
 	return nil
 }
 
@@ -442,19 +506,17 @@ func (s *State) cursorTabBackward(ev *parser.CSIEvent) error {
 		inc = ev.Args[0]
 	}
 
-	diff := pos.Col % 8
-	if diff > 0 {
-		pos.Col -= diff
-		inc--
+	for i := 0; i < inc; i++ {
+		for pos.Col > 0 {
+			pos.Col--
+
+			if s.tabStops[pos.Col] {
+				break
+			}
+		}
 	}
 
-	pos.Col -= (inc * 8)
-
-	if pos.Col < 0 {
-		pos.Col = 0
-	}
-
-	s.cursor = pos
+	s.setCursor(pos)
 	return nil
 }
 
@@ -473,7 +535,7 @@ func (s *State) cursorUp(ev *parser.CSIEvent) error {
 		pos.Row = 0
 	}
 
-	s.cursor = pos
+	s.setCursor(pos)
 	return nil
 }
 
@@ -492,7 +554,7 @@ func (s *State) cursorDown(ev *parser.CSIEvent) error {
 		pos.Row = s.rows - 1
 	}
 
-	s.cursor = pos
+	s.setCursor(pos)
 	return nil
 }
 
@@ -513,7 +575,7 @@ func (s *State) cursorNextLine(ev *parser.CSIEvent) error {
 
 	pos.Col = 0
 
-	s.cursor = pos
+	s.setCursor(pos)
 	return nil
 }
 
@@ -534,7 +596,7 @@ func (s *State) cursorPrevLine(ev *parser.CSIEvent) error {
 
 	pos.Col = 0
 
-	s.cursor = pos
+	s.setCursor(pos)
 	return nil
 }
 
@@ -653,7 +715,9 @@ func (s *State) insertLines(ev *parser.CSIEvent) error {
 	start := s.cursor
 	start.Col = 0
 
-	end := Pos{s.rows - 1, s.cols - 1}
+	_, bottom := s.scrollBounds()
+
+	end := Pos{bottom, s.cols - 1}
 
 	return s.output.ScrollRect(Rect{start, end}.ScrollDown(dist))
 }
@@ -672,7 +736,9 @@ func (s *State) deleteLines(ev *parser.CSIEvent) error {
 	start := s.cursor
 	start.Col = 0
 
-	end := Pos{s.rows - 1, s.cols - 1}
+	_, bottom := s.scrollBounds()
+
+	end := Pos{bottom, s.cols - 1}
 
 	return s.output.ScrollRect(Rect{start, end}.ScrollUp(dist))
 }
@@ -693,8 +759,10 @@ func (s *State) deleteChars(ev *parser.CSIEvent) error {
 }
 
 func (s *State) scrollUp(ev *parser.CSIEvent) error {
-	start := Pos{0, 0}
-	end := Pos{s.rows - 1, s.cols - 1}
+	top, bottom := s.scrollBounds()
+
+	start := Pos{top, 0}
+	end := Pos{bottom, s.cols - 1}
 
 	var dist int
 	if len(ev.Args) > 0 {
@@ -709,8 +777,10 @@ func (s *State) scrollUp(ev *parser.CSIEvent) error {
 }
 
 func (s *State) scrollDown(ev *parser.CSIEvent) error {
-	start := Pos{0, 0}
-	end := Pos{s.rows - 1, s.cols - 1}
+	top, bottom := s.scrollBounds()
+
+	start := Pos{top, 0}
+	end := Pos{bottom, s.cols - 1}
 
 	var dist int
 	if len(ev.Args) > 0 {
@@ -832,6 +902,76 @@ func (s *State) setDecMode(ev *parser.CSIEvent) error {
 	case 2004:
 		s.modes.bracketpaste = true
 	}
+
+	return nil
+}
+
+func (s *State) statusReport(ev *parser.CSIEvent) error {
+	var which int
+
+	if len(ev.Args) > 0 {
+		which = ev.Args[0]
+	}
+
+	switch which {
+	case 5:
+		return s.output.Output([]byte("\x9b0n"))
+	case 6:
+		return s.output.Output([]byte(fmt.Sprintf("\x9b%d;%dR", s.cursor.Row+1, s.cursor.Col+1)))
+	}
+
+	return nil
+}
+
+func (s *State) statusReportDec(ev *parser.CSIEvent) error {
+	var which int
+
+	if len(ev.Args) > 0 {
+		which = ev.Args[0]
+	}
+
+	switch which {
+	case 5:
+		return s.output.Output([]byte("\x9b?0n"))
+	case 6:
+		return s.output.Output([]byte(fmt.Sprintf("\x9b?%d;%dR", s.cursor.Row+1, s.cursor.Col+1)))
+	}
+
+	return nil
+}
+
+func (s *State) softReset(ev *parser.CSIEvent) error {
+	return s.Reset()
+}
+
+func (s *State) setTopBottomMargin(ev *parser.CSIEvent) error {
+	var (
+		top    = 1
+		bottom = -1
+	)
+
+	switch len(ev.Args) {
+	case 2:
+		bottom = ev.Args[1] - 1
+		fallthrough
+	case 1:
+		top = ev.Args[0]
+	}
+
+	if top < 1 {
+		top = 1
+	}
+
+	if top > s.rows {
+		top = s.rows
+	}
+
+	if bottom > s.rows {
+		bottom = s.rows
+	}
+
+	s.scrollregion.top = top - 1
+	s.scrollregion.bottom = bottom
 
 	return nil
 }
