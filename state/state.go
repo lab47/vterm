@@ -1,4 +1,4 @@
-package screen
+package state
 
 import (
 	"fmt"
@@ -101,8 +101,9 @@ type Output interface {
 	ClearRect(r Rect) error
 	ScrollRect(s ScrollRect) error
 	Output(data []byte) error
-	SetTermProp(prop string, val interface{}) error
-	SetPenProp(prop string, val interface{}) error
+	SetTermProp(prop TermAttr, val interface{}) error
+	SetPenProp(prop PenAttr, val interface{}) error
+	StringEvent(kind string, data []byte) error
 }
 
 type modes struct {
@@ -149,6 +150,8 @@ type State struct {
 	}
 }
 
+var _ parser.EventHandler = &State{}
+
 func NewState(rows, cols int, output Output) (*State, error) {
 	screen := &State{
 		rows:     rows,
@@ -178,6 +181,9 @@ func (s *State) Reset() error {
 	s.scrollregion.top = 0
 	s.scrollregion.bottom = -1
 
+	s.pen.fgColor = DefaultColor{}
+	s.pen.bgColor = DefaultColor{}
+
 	return nil
 }
 
@@ -189,6 +195,10 @@ func (s *State) HandleEvent(gev parser.Event) error {
 		return s.handleControl(ev.Control)
 	case *parser.CSIEvent:
 		return s.handleCSI(ev)
+	case *parser.StringEvent:
+		return s.handleString(ev)
+	case *parser.OSCEvent:
+		return s.handleOSC(ev)
 	default:
 		return fmt.Errorf("unhandled event type: %T", ev)
 	}
@@ -339,6 +349,9 @@ var csiHandlers = map[parser.CSICommand]func(*State, *parser.CSIEvent) error{
 
 	parser.SM:   (*State).setMode,
 	parser.SM_Q: (*State).setDecMode,
+
+	parser.RM:   (*State).removeMode,
+	parser.RM_Q: (*State).removeDecMode,
 
 	parser.SGR: (*State).selectGraphics,
 
@@ -866,24 +879,24 @@ func (s *State) setDecMode(ev *parser.CSIEvent) error {
 	case 1:
 		s.modes.cursor = true
 	case 5:
-		return s.output.SetTermProp("reverse", true)
+		return s.output.SetTermProp(TermAttrReverse, true)
 	case 6:
 		s.modes.origin = true
 		s.cursor = Pos{0, 0}
 	case 7:
 		s.modes.autowrap = true
 	case 12:
-		return s.output.SetTermProp("blink", true)
+		return s.output.SetTermProp(TermAttrBlink, true)
 	case 25:
-		return s.output.SetTermProp("visible", true)
+		return s.output.SetTermProp(TermAttrVisible, true)
 	case 69:
 		s.modes.leftrightmargin = true
 	case 1000:
-		return s.output.SetTermProp("mouse", MouseClick)
+		return s.output.SetTermProp(TermAttrMouse, MouseClick)
 	case 1002:
-		return s.output.SetTermProp("mouse", MouseDrag)
+		return s.output.SetTermProp(TermAttrMouse, MouseDrag)
 	case 1003:
-		return s.output.SetTermProp("mouse", MouseMove)
+		return s.output.SetTermProp(TermAttrMouse, MouseMove)
 	case 1004:
 		s.modes.report_focus = true
 	case 1005:
@@ -893,14 +906,81 @@ func (s *State) setDecMode(ev *parser.CSIEvent) error {
 	case 1015:
 		s.mouseProtocol = MouseRXVT
 	case 1047:
-		return s.output.SetTermProp("altscreen", true)
+		return s.output.SetTermProp(TermAttrAltScreen, true)
 	case 1048:
 		s.savedCursor = s.cursor
 	case 1049:
 		s.savedCursor = s.cursor
-		return s.output.SetTermProp("altscreen", true)
+		return s.output.SetTermProp(TermAttrAltScreen, true)
 	case 2004:
 		s.modes.bracketpaste = true
+	}
+
+	return nil
+}
+
+func (s *State) removeMode(ev *parser.CSIEvent) error {
+	if len(ev.Args) == 0 {
+		return nil
+	}
+
+	mode := ev.Args[0]
+
+	switch mode {
+	case 4:
+		s.modes.insert = false
+	case 20:
+		s.modes.newline = false
+	}
+
+	return nil
+}
+
+func (s *State) removeDecMode(ev *parser.CSIEvent) error {
+	if len(ev.Args) == 0 {
+		return nil
+	}
+
+	mode := ev.Args[0]
+
+	switch mode {
+	case 1:
+		s.modes.cursor = false
+	case 5:
+		return s.output.SetTermProp(TermAttrReverse, false)
+	case 6:
+		s.modes.origin = false
+	case 7:
+		s.modes.autowrap = false
+	case 12:
+		return s.output.SetTermProp(TermAttrBlink, false)
+	case 25:
+		return s.output.SetTermProp(TermAttrVisible, false)
+	case 69:
+		s.modes.leftrightmargin = false
+	case 1000:
+		return s.output.SetTermProp(TermAttrMouse, MouseNone)
+	case 1002:
+		return s.output.SetTermProp(TermAttrMouse, MouseNone)
+	case 1003:
+		return s.output.SetTermProp(TermAttrMouse, MouseNone)
+	case 1004:
+		s.modes.report_focus = false
+	case 1005:
+		s.mouseProtocol = MouseX10
+	case 1006:
+		s.mouseProtocol = MouseX10
+	case 1015:
+		s.mouseProtocol = MouseX10
+	case 1047:
+		return s.output.SetTermProp(TermAttrAltScreen, false)
+	case 1048:
+		s.cursor = s.savedCursor
+	case 1049:
+		s.cursor = s.savedCursor
+		return s.output.SetTermProp(TermAttrAltScreen, false)
+	case 2004:
+		s.modes.bracketpaste = false
 	}
 
 	return nil

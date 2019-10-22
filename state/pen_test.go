@@ -1,4 +1,4 @@
-package screen
+package state
 
 import (
 	"testing"

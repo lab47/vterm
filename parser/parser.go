@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 )
 
 type EventHandler interface {
@@ -215,9 +217,33 @@ top:
 	}
 }
 
+type OSCEvent struct {
+	Command int
+	Data    string
+}
+
 type StringEvent struct {
 	Kind string
 	Data []byte
+}
+
+func (p *Parser) emitStringEvent(kind string, data []byte) error {
+	if kind == "OSC" {
+		str := string(data)
+		if sc := strings.IndexByte(str, ';'); sc != -1 {
+			if cmd, err := strconv.Atoi(str[:sc]); err == nil {
+				return p.handler.HandleEvent(&OSCEvent{
+					Command: cmd,
+					Data:    str[sc+1:],
+				})
+			}
+		}
+	}
+
+	return p.handler.HandleEvent(&StringEvent{
+		Kind: kind,
+		Data: data,
+	})
 }
 
 func (p *Parser) readString(kind string) error {
@@ -242,10 +268,7 @@ top:
 			}
 
 			if b == 0x5c {
-				return p.handler.HandleEvent(&StringEvent{
-					Kind: kind,
-					Data: data,
-				})
+				return p.emitStringEvent(kind, data)
 			}
 
 			err = p.br.UnreadByte()
@@ -257,10 +280,7 @@ top:
 		default:
 			switch {
 			case b == 0x7:
-				return p.handler.HandleEvent(&StringEvent{
-					Kind: kind,
-					Data: data,
-				})
+				return p.emitStringEvent(kind, data)
 			case b < C0:
 				p.readControl(b)
 				continue top
