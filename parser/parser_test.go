@@ -386,13 +386,13 @@ func TestParser(t *testing.T) {
 	n.It("handles OSC sequences", func(t *testing.T) {
 		tests := []struct {
 			input string
-			event *StringEvent
+			event *OSCEvent
 		}{
 			// !OSC BEL
-			{"\x1b]1;Hello\x07", &StringEvent{Kind: "OSC", Data: []byte("1;Hello")}},
+			{"\x1b]1;Hello\x07", &OSCEvent{Command: 1, Data: "Hello"}},
 
 			// !OSC ST (7bit)
-			{"\x1b]1;Hello\x1b\\", &StringEvent{Kind: "OSC", Data: []byte("1;Hello")}},
+			{"\x1b]1;Hello\x1b\\", &OSCEvent{Command: 1, Data: "Hello"}},
 		}
 
 		for _, test := range tests {
@@ -406,7 +406,7 @@ func TestParser(t *testing.T) {
 
 			require.Equal(t, 1, len(c.Events))
 
-			ev, ok := c.Events[0].(*StringEvent)
+			ev, ok := c.Events[0].(*OSCEvent)
 			require.True(t, ok)
 
 			assert.Equal(t, test.event, ev)
@@ -466,11 +466,11 @@ func TestParser(t *testing.T) {
 
 		assert.Equal(t, byte(10), cev.Control)
 
-		ev, ok := c.Events[1].(*StringEvent)
+		ev, ok := c.Events[1].(*OSCEvent)
 		require.True(t, ok)
 
-		assert.Equal(t, "OSC", ev.Kind)
-		assert.Equal(t, []byte("2;Bye"), ev.Data)
+		assert.Equal(t, 2, ev.Command)
+		assert.Equal(t, "Bye", ev.Data)
 	})
 
 	n.It("handles DSC sequences", func(t *testing.T) {

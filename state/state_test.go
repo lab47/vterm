@@ -1,6 +1,7 @@
 package state
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/evanphx/vterm/parser"
@@ -62,13 +63,19 @@ func (o *opSink) Output(b []byte) error {
 	return nil
 }
 
-func (o *opSink) SetTermProp(p string, val interface{}) error {
-	o.termProps = append(o.termProps, prop{p, val})
+func (o *opSink) SetTermProp(p TermAttr, val interface{}) error {
+	name := strings.ToLower(p.String()[len("TermAttr"):])
+	o.termProps = append(o.termProps, prop{name, val})
 	return nil
 }
 
-func (o *opSink) SetPenProp(p string, val interface{}) error {
-	o.penProps = append(o.penProps, prop{p, val})
+func (o *opSink) SetPenProp(p PenAttr, val interface{}) error {
+	name := strings.ToLower(p.String()[len("PenAttr"):])
+	o.penProps = append(o.penProps, prop{name, val})
+	return nil
+}
+
+func (o *opSink) StringEvent(kind string, data []byte) error {
 	return nil
 }
 
@@ -78,10 +85,10 @@ func TestState(t *testing.T) {
 	n.It("generates SetCell for normal output", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(80, 20, &sink)
+		state, err := NewState(80, 20, &sink)
 		require.NoError(t, err)
 
-		err = screen.HandleEvent(&parser.TextEvent{
+		err = state.HandleEvent(&parser.TextEvent{
 			Text: []byte("ABC"),
 		})
 
@@ -114,10 +121,10 @@ func TestState(t *testing.T) {
 		for _, i := range tests {
 			var sink opSink
 
-			screen, err := NewState(80, 20, &sink)
+			state, err := NewState(80, 20, &sink)
 			require.NoError(t, err)
 
-			err = screen.HandleEvent(&parser.TextEvent{
+			err = state.HandleEvent(&parser.TextEvent{
 				Text: i.input,
 			})
 
@@ -135,10 +142,10 @@ func TestState(t *testing.T) {
 	n.It("sends an update when detecting a combining char", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(20, 80, &sink)
+		state, err := NewState(20, 80, &sink)
 		require.NoError(t, err)
 
-		err = screen.HandleEvent(&parser.TextEvent{
+		err = state.HandleEvent(&parser.TextEvent{
 			Text: []byte("e\xcc\x81Z"),
 		})
 
@@ -148,7 +155,7 @@ func TestState(t *testing.T) {
 		assert.Equal(t, rune(0x301), sink.appendOps[Pos{0, 0}][0])
 		assert.Equal(t, rune(0x5a), sink.cellOps[Pos{0, 1}].Rune)
 
-		assert.Equal(t, Pos{0, 2}, screen.cursor)
+		assert.Equal(t, Pos{0, 2}, state.cursor)
 	})
 
 	n.It("moves the cursor on a control characters", func(t *testing.T) {
@@ -177,19 +184,19 @@ func TestState(t *testing.T) {
 
 		var sink opSink
 
-		screen, err := NewState(20, 80, &sink)
+		state, err := NewState(20, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{0, 3}
+		state.cursor = Pos{0, 3}
 
 		for _, test := range tests {
-			err = screen.HandleEvent(&parser.ControlEvent{
+			err = state.HandleEvent(&parser.ControlEvent{
 				Control: test.control,
 			})
 
 			require.NoError(t, err)
 
-			assert.Equal(t, test.pos, screen.cursor)
+			assert.Equal(t, test.pos, state.cursor)
 		}
 	})
 
@@ -249,28 +256,28 @@ func TestState(t *testing.T) {
 
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{0, 3}
+		state.cursor = Pos{0, 3}
 
 		for i, test := range tests {
-			err = screen.HandleEvent(test.event)
+			err = state.HandleEvent(test.event)
 			require.NoError(t, err)
 
-			require.Equal(t, test.pos, screen.cursor, "%dth : On event: %#v", i, test.event)
+			require.Equal(t, test.pos, state.cursor, "%dth : On event: %#v", i, test.event)
 		}
 	})
 
 	n.It("can scroll a line to insert characters", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: '@'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: '@'})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.scrollRect))
@@ -284,7 +291,7 @@ func TestState(t *testing.T) {
 
 		sink.scrollRect = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: '@', Args: []int{10}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: '@', Args: []int{10}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.scrollRect))
@@ -298,12 +305,12 @@ func TestState(t *testing.T) {
 	n.It("can clear the display", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'J'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'J'})
 		require.NoError(t, err)
 
 		require.Equal(t, 2, len(sink.clearRects))
@@ -312,9 +319,9 @@ func TestState(t *testing.T) {
 		assert.Equal(t, Rect{Start: Pos{2, 0}, End: Pos{24, 79}}, sink.clearRects[1])
 
 		sink.clearRects = nil
-		screen.cursor = Pos{1, 0}
+		state.cursor = Pos{1, 0}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'J'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'J'})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.clearRects))
@@ -322,9 +329,9 @@ func TestState(t *testing.T) {
 		assert.Equal(t, Rect{Start: Pos{1, 0}, End: Pos{24, 79}}, sink.clearRects[0])
 
 		sink.clearRects = nil
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'J', Args: []int{1}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'J', Args: []int{1}})
 		require.NoError(t, err)
 
 		require.Equal(t, 2, len(sink.clearRects))
@@ -333,9 +340,9 @@ func TestState(t *testing.T) {
 		assert.Equal(t, Rect{Start: Pos{1, 0}, End: Pos{1, 3}}, sink.clearRects[1])
 
 		sink.clearRects = nil
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'J', Args: []int{2}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'J', Args: []int{2}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.clearRects))
@@ -346,12 +353,12 @@ func TestState(t *testing.T) {
 	n.It("can erase lines", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'K'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'K'})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.clearRects))
@@ -359,9 +366,9 @@ func TestState(t *testing.T) {
 		assert.Equal(t, Rect{Start: Pos{1, 3}, End: Pos{1, 79}}, sink.clearRects[0])
 
 		sink.clearRects = nil
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'K', Args: []int{1}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'K', Args: []int{1}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.clearRects))
@@ -369,9 +376,9 @@ func TestState(t *testing.T) {
 		assert.Equal(t, Rect{Start: Pos{1, 0}, End: Pos{1, 3}}, sink.clearRects[0])
 
 		sink.clearRects = nil
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'K', Args: []int{2}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'K', Args: []int{2}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.clearRects))
@@ -382,12 +389,12 @@ func TestState(t *testing.T) {
 	n.It("can insert lines by scrolling a region", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'L'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'L'})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.scrollRect))
@@ -401,7 +408,7 @@ func TestState(t *testing.T) {
 
 		sink.scrollRect = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'L', Args: []int{10}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'L', Args: []int{10}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.scrollRect))
@@ -417,12 +424,12 @@ func TestState(t *testing.T) {
 	n.It("can delete lines by scrolling a region", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'M'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'M'})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.scrollRect))
@@ -436,7 +443,7 @@ func TestState(t *testing.T) {
 
 		sink.scrollRect = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'M', Args: []int{10}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'M', Args: []int{10}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.scrollRect))
@@ -452,12 +459,12 @@ func TestState(t *testing.T) {
 	n.It("can scroll a line to delete characters", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'P'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'P'})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.scrollRect))
@@ -471,7 +478,7 @@ func TestState(t *testing.T) {
 
 		sink.scrollRect = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'P', Args: []int{10}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'P', Args: []int{10}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.scrollRect))
@@ -485,12 +492,12 @@ func TestState(t *testing.T) {
 	n.It("can scroll everything upward", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'S'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'S'})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.scrollRect))
@@ -504,7 +511,7 @@ func TestState(t *testing.T) {
 
 		sink.scrollRect = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'S', Args: []int{10}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'S', Args: []int{10}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.scrollRect))
@@ -520,12 +527,12 @@ func TestState(t *testing.T) {
 	n.It("can scroll everything downward", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'T'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'T'})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.scrollRect))
@@ -539,7 +546,7 @@ func TestState(t *testing.T) {
 
 		sink.scrollRect = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'T', Args: []int{10}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'T', Args: []int{10}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.scrollRect))
@@ -555,12 +562,12 @@ func TestState(t *testing.T) {
 	n.It("can erase characters", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'X'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'X'})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.clearRects))
@@ -569,7 +576,7 @@ func TestState(t *testing.T) {
 
 		sink.clearRects = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'X', Args: []int{10}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'X', Args: []int{10}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.clearRects))
@@ -580,12 +587,12 @@ func TestState(t *testing.T) {
 	n.It("can emit a sequence for device attributes", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'c'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'c'})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.outputs))
@@ -596,12 +603,12 @@ func TestState(t *testing.T) {
 	n.It("can emit a sequence for device attributes, dec style", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'c', Leader: []byte{'>'}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'c', Leader: []byte{'>'}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.outputs))
@@ -612,41 +619,41 @@ func TestState(t *testing.T) {
 	n.It("can position the cursor to an absolute row", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'd'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'd'})
 		require.NoError(t, err)
 
-		assert.Equal(t, Pos{0, 3}, screen.cursor)
+		assert.Equal(t, Pos{0, 3}, state.cursor)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'd', Args: []int{8}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'd', Args: []int{8}})
 		require.NoError(t, err)
 
-		assert.Equal(t, Pos{7, 3}, screen.cursor)
+		assert.Equal(t, Pos{7, 3}, state.cursor)
 	})
 
 	n.It("can clear tabstops", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 8}
+		state.cursor = Pos{1, 8}
 
-		assert.True(t, screen.tabStops[8])
+		assert.True(t, state.tabStops[8])
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'g'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'g'})
 		require.NoError(t, err)
 
-		assert.False(t, screen.tabStops[8])
+		assert.False(t, state.tabStops[8])
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'g', Args: []int{3}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'g', Args: []int{3}})
 		require.NoError(t, err)
 
-		for _, b := range screen.tabStops {
+		for _, b := range state.tabStops {
 			require.False(t, b)
 		}
 	})
@@ -654,46 +661,46 @@ func TestState(t *testing.T) {
 	n.It("can activate modes", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 8}
+		state.cursor = Pos{1, 8}
 
-		assert.True(t, screen.tabStops[8])
+		assert.True(t, state.tabStops[8])
 
-		assert.False(t, screen.modes.insert)
+		assert.False(t, state.modes.insert)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Args: []int{4}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Args: []int{4}})
 		require.NoError(t, err)
 
-		assert.True(t, screen.modes.insert)
+		assert.True(t, state.modes.insert)
 
-		assert.False(t, screen.modes.newline)
+		assert.False(t, state.modes.newline)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Args: []int{20}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Args: []int{20}})
 		require.NoError(t, err)
 
-		assert.True(t, screen.modes.newline)
+		assert.True(t, state.modes.newline)
 	})
 
 	n.It("can activate dec modes", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 8}
+		state.cursor = Pos{1, 8}
 
-		assert.True(t, screen.tabStops[8])
+		assert.True(t, state.tabStops[8])
 
-		assert.False(t, screen.modes.cursor)
+		assert.False(t, state.modes.cursor)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1}})
 		require.NoError(t, err)
 
-		assert.True(t, screen.modes.cursor)
+		assert.True(t, state.modes.cursor)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{5}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{5}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.termProps))
@@ -703,27 +710,27 @@ func TestState(t *testing.T) {
 
 		sink.termProps = nil
 
-		screen.cursor = Pos{4, 10}
+		state.cursor = Pos{4, 10}
 
-		assert.False(t, screen.modes.origin)
+		assert.False(t, state.modes.origin)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{6}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{6}})
 		require.NoError(t, err)
 
-		assert.True(t, screen.modes.origin)
+		assert.True(t, state.modes.origin)
 
-		assert.Equal(t, Pos{0, 0}, screen.cursor)
+		assert.Equal(t, Pos{0, 0}, state.cursor)
 
-		screen.modes.autowrap = false
+		state.modes.autowrap = false
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{7}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{7}})
 		require.NoError(t, err)
 
-		assert.True(t, screen.modes.autowrap)
+		assert.True(t, state.modes.autowrap)
 
 		sink.termProps = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{12}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{12}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.termProps))
@@ -733,7 +740,7 @@ func TestState(t *testing.T) {
 
 		sink.termProps = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{25}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{25}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.termProps))
@@ -741,16 +748,16 @@ func TestState(t *testing.T) {
 		assert.Equal(t, "visible", sink.termProps[0].prop)
 		assert.Equal(t, true, sink.termProps[0].val)
 
-		assert.False(t, screen.modes.leftrightmargin)
+		assert.False(t, state.modes.leftrightmargin)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{69}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{69}})
 		require.NoError(t, err)
 
-		assert.True(t, screen.modes.leftrightmargin)
+		assert.True(t, state.modes.leftrightmargin)
 
 		sink.termProps = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1000}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1000}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.termProps))
@@ -760,7 +767,7 @@ func TestState(t *testing.T) {
 
 		sink.termProps = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1002}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1002}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.termProps))
@@ -770,7 +777,7 @@ func TestState(t *testing.T) {
 
 		sink.termProps = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1003}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1003}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.termProps))
@@ -778,33 +785,33 @@ func TestState(t *testing.T) {
 		assert.Equal(t, "mouse", sink.termProps[0].prop)
 		assert.Equal(t, MouseMove, sink.termProps[0].val)
 
-		assert.False(t, screen.modes.report_focus)
+		assert.False(t, state.modes.report_focus)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1004}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1004}})
 		require.NoError(t, err)
 
-		assert.True(t, screen.modes.report_focus)
+		assert.True(t, state.modes.report_focus)
 
-		assert.Equal(t, MouseX10, screen.mouseProtocol)
+		assert.Equal(t, MouseX10, state.mouseProtocol)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1005}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1005}})
 		require.NoError(t, err)
 
-		assert.Equal(t, MouseUTF8, screen.mouseProtocol)
+		assert.Equal(t, MouseUTF8, state.mouseProtocol)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1006}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1006}})
 		require.NoError(t, err)
 
-		assert.Equal(t, MouseSGR, screen.mouseProtocol)
+		assert.Equal(t, MouseSGR, state.mouseProtocol)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1015}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1015}})
 		require.NoError(t, err)
 
-		assert.Equal(t, MouseRXVT, screen.mouseProtocol)
+		assert.Equal(t, MouseRXVT, state.mouseProtocol)
 
 		sink.termProps = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1047}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1047}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.termProps))
@@ -812,18 +819,18 @@ func TestState(t *testing.T) {
 		assert.Equal(t, "altscreen", sink.termProps[0].prop)
 		assert.Equal(t, true, sink.termProps[0].val)
 
-		screen.cursor = Pos{12, 33}
+		state.cursor = Pos{12, 33}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1048}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1048}})
 		require.NoError(t, err)
 
-		assert.Equal(t, Pos{12, 33}, screen.savedCursor)
+		assert.Equal(t, Pos{12, 33}, state.savedCursor)
 
 		sink.termProps = nil
 
-		screen.cursor = Pos{13, 32}
+		state.cursor = Pos{13, 32}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1049}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{1049}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.termProps))
@@ -831,36 +838,36 @@ func TestState(t *testing.T) {
 		assert.Equal(t, "altscreen", sink.termProps[0].prop)
 		assert.Equal(t, true, sink.termProps[0].val)
 
-		assert.Equal(t, Pos{13, 32}, screen.savedCursor)
+		assert.Equal(t, Pos{13, 32}, state.savedCursor)
 
-		assert.False(t, screen.modes.bracketpaste)
+		assert.False(t, state.modes.bracketpaste)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{2004}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Leader: []byte{'?'}, Args: []int{2004}})
 		require.NoError(t, err)
 
-		assert.True(t, screen.modes.bracketpaste)
+		assert.True(t, state.modes.bracketpaste)
 	})
 
 	n.It("can emit a sequence for device status", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'n', Args: []int{5}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'n', Args: []int{5}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.outputs))
 
 		assert.Equal(t, []byte("\x9b0n"), sink.outputs[0])
 
-		screen.cursor = Pos{10, 20}
+		state.cursor = Pos{10, 20}
 
 		sink.outputs = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'n', Args: []int{6}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'n', Args: []int{6}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.outputs))
@@ -871,23 +878,23 @@ func TestState(t *testing.T) {
 	n.It("can emit a sequence for device status, dec style", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'n', Leader: []byte("?"), Args: []int{5}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'n', Leader: []byte("?"), Args: []int{5}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.outputs))
 
 		assert.Equal(t, []byte("\x9b?0n"), sink.outputs[0])
 
-		screen.cursor = Pos{10, 20}
+		state.cursor = Pos{10, 20}
 
 		sink.outputs = nil
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'n', Leader: []byte("?"), Args: []int{6}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'n', Leader: []byte("?"), Args: []int{6}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, len(sink.outputs))
@@ -898,60 +905,60 @@ func TestState(t *testing.T) {
 	n.It("can reset the state", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		screen.cursor = Pos{1, 3}
+		state.cursor = Pos{1, 3}
 
-		screen.modes.cursor = true
-		screen.modes.autowrap = false
-		screen.modes.insert = true
-		screen.modes.newline = true
-		screen.modes.altscreen = true
-		screen.modes.origin = true
-		screen.modes.leftrightmargin = true
-		screen.modes.bracketpaste = true
-		screen.modes.report_focus = true
+		state.modes.cursor = true
+		state.modes.autowrap = false
+		state.modes.insert = true
+		state.modes.newline = true
+		state.modes.altscreen = true
+		state.modes.origin = true
+		state.modes.leftrightmargin = true
+		state.modes.bracketpaste = true
+		state.modes.report_focus = true
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'p', Leader: []byte("!")})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'p', Leader: []byte("!")})
 		require.NoError(t, err)
 
-		assert.Equal(t, Pos{1, 3}, screen.cursor)
+		assert.Equal(t, Pos{1, 3}, state.cursor)
 
-		assert.True(t, screen.modes.autowrap)
-		assert.False(t, screen.modes.cursor)
-		assert.False(t, screen.modes.insert)
-		assert.False(t, screen.modes.newline)
-		assert.False(t, screen.modes.altscreen)
-		assert.False(t, screen.modes.origin)
-		assert.False(t, screen.modes.leftrightmargin)
-		assert.False(t, screen.modes.bracketpaste)
-		assert.False(t, screen.modes.report_focus)
+		assert.True(t, state.modes.autowrap)
+		assert.False(t, state.modes.cursor)
+		assert.False(t, state.modes.insert)
+		assert.False(t, state.modes.newline)
+		assert.False(t, state.modes.altscreen)
+		assert.False(t, state.modes.origin)
+		assert.False(t, state.modes.leftrightmargin)
+		assert.False(t, state.modes.bracketpaste)
+		assert.False(t, state.modes.report_focus)
 	})
 
 	n.It("can set top and bottom margins", func(t *testing.T) {
 		var sink opSink
 
-		screen, err := NewState(25, 80, &sink)
+		state, err := NewState(25, 80, &sink)
 		require.NoError(t, err)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'r'})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'r'})
 		require.NoError(t, err)
 
-		assert.Equal(t, screen.scrollregion.top, 0)
-		assert.Equal(t, screen.scrollregion.bottom, -1)
+		assert.Equal(t, state.scrollregion.top, 0)
+		assert.Equal(t, state.scrollregion.bottom, -1)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'r', Args: []int{10}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'r', Args: []int{10}})
 		require.NoError(t, err)
 
-		assert.Equal(t, screen.scrollregion.top, 9)
-		assert.Equal(t, screen.scrollregion.bottom, -1)
+		assert.Equal(t, state.scrollregion.top, 9)
+		assert.Equal(t, state.scrollregion.bottom, -1)
 
-		err = screen.HandleEvent(&parser.CSIEvent{Command: 'r', Args: []int{20, 15}})
+		err = state.HandleEvent(&parser.CSIEvent{Command: 'r', Args: []int{20, 15}})
 		require.NoError(t, err)
 
-		assert.Equal(t, screen.scrollregion.top, 19)
-		assert.Equal(t, screen.scrollregion.bottom, 14)
+		assert.Equal(t, state.scrollregion.top, 19)
+		assert.Equal(t, state.scrollregion.bottom, 14)
 	})
 
 	n.Meow()
