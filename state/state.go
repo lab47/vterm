@@ -18,29 +18,29 @@ type Rect struct {
 
 func (s Rect) ScrollUp(dist int) ScrollRect {
 	x := ScrollRect{Rect: s}
-	x.Vertical = ScrollUp
-	x.VerticalDistance = dist
+	x.Direction = ScrollUp
+	x.Distance = dist
 	return x
 }
 
 func (s Rect) ScrollDown(dist int) ScrollRect {
 	x := ScrollRect{Rect: s}
-	x.Vertical = ScrollDown
-	x.VerticalDistance = dist
+	x.Direction = ScrollDown
+	x.Distance = dist
 	return x
 }
 
 func (s Rect) ScrollLeft(dist int) ScrollRect {
 	x := ScrollRect{Rect: s}
-	x.Horizontal = ScrollLeft
-	x.HorizontalDistance = dist
+	x.Direction = ScrollLeft
+	x.Distance = dist
 	return x
 }
 
 func (s Rect) ScrollRight(dist int) ScrollRect {
 	x := ScrollRect{Rect: s}
-	x.Horizontal = ScrollRight
-	x.HorizontalDistance = dist
+	x.Direction = ScrollRight
+	x.Distance = dist
 	return x
 }
 
@@ -56,38 +56,8 @@ const (
 
 type ScrollRect struct {
 	Rect
-	Vertical           ScrollDirection
-	VerticalDistance   int
-	Horizontal         ScrollDirection
-	HorizontalDistance int
-}
-
-func (s ScrollRect) Up(dist int) ScrollRect {
-	x := s
-	x.Vertical = ScrollUp
-	x.VerticalDistance = dist
-	return x
-}
-
-func (s ScrollRect) Down(dist int) ScrollRect {
-	x := s
-	x.Vertical = ScrollDown
-	x.VerticalDistance = dist
-	return x
-}
-
-func (s ScrollRect) Left(dist int) ScrollRect {
-	x := s
-	x.Horizontal = ScrollLeft
-	x.HorizontalDistance = dist
-	return x
-}
-
-func (s ScrollRect) Right(dist int) ScrollRect {
-	x := s
-	x.Horizontal = ScrollRight
-	x.HorizontalDistance = dist
-	return x
+	Direction ScrollDirection
+	Distance  int
 }
 
 type CellRune struct {
@@ -96,6 +66,7 @@ type CellRune struct {
 }
 
 type Output interface {
+	MoveCursor(pos Pos) error
 	SetCell(pos Pos, val CellRune) error
 	AppendCell(pos Pos, r rune) error
 	ClearRect(r Rect) error
@@ -238,10 +209,13 @@ func (s *State) setCursor(p Pos) {
 		p.Col = s.cols - 1
 	}
 
-	s.cursor = p
+	if s.cursor != p {
+		s.cursor = p
+		s.output.MoveCursor(p)
+	}
 }
 
-func (s *State) advancePos() Pos {
+func (s *State) advancePos() (Pos, Pos) {
 	pos := s.cursor
 
 	newCur := s.cursor
@@ -252,9 +226,7 @@ func (s *State) advancePos() Pos {
 		newCur.Col = 0
 	}
 
-	s.setCursor(newCur)
-
-	return pos
+	return pos, newCur
 }
 
 func (s *State) writeData(data []byte) error {
@@ -272,7 +244,7 @@ func (s *State) writeData(data []byte) error {
 			continue
 		}
 
-		pos := s.advancePos()
+		pos, update := s.advancePos()
 
 		s.lastPos = pos
 
@@ -280,6 +252,8 @@ func (s *State) writeData(data []byte) error {
 		if err != nil {
 			return err
 		}
+
+		s.setCursor(update)
 	}
 
 	return nil

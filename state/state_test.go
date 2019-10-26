@@ -79,6 +79,10 @@ func (o *opSink) StringEvent(kind string, data []byte) error {
 	return nil
 }
 
+func (o *opSink) MoveCursor(p Pos) error {
+	return nil
+}
+
 func TestState(t *testing.T) {
 	n := neko.Modern(t)
 
@@ -286,8 +290,8 @@ func TestState(t *testing.T) {
 
 		assert.Equal(t, Rect{Start: Pos{1, 3}, End: Pos{1, 79}}, sr.Rect)
 
-		assert.Equal(t, ScrollRight, sr.Horizontal)
-		assert.Equal(t, 1, sr.HorizontalDistance)
+		assert.Equal(t, ScrollRight, sr.Direction)
+		assert.Equal(t, 1, sr.Distance)
 
 		sink.scrollRect = nil
 
@@ -298,8 +302,8 @@ func TestState(t *testing.T) {
 
 		sr = sink.scrollRect[0]
 
-		assert.Equal(t, ScrollRight, sr.Horizontal)
-		assert.Equal(t, 10, sr.HorizontalDistance)
+		assert.Equal(t, ScrollRight, sr.Direction)
+		assert.Equal(t, 10, sr.Distance)
 	})
 
 	n.It("can clear the display", func(t *testing.T) {
@@ -403,8 +407,8 @@ func TestState(t *testing.T) {
 
 		assert.Equal(t, Rect{Start: Pos{1, 0}, End: Pos{24, 79}}, sr.Rect)
 
-		assert.Equal(t, ScrollDown, sr.Vertical)
-		assert.Equal(t, 1, sr.VerticalDistance)
+		assert.Equal(t, ScrollDown, sr.Direction)
+		assert.Equal(t, 1, sr.Distance)
 
 		sink.scrollRect = nil
 
@@ -417,8 +421,8 @@ func TestState(t *testing.T) {
 
 		assert.Equal(t, Rect{Start: Pos{1, 0}, End: Pos{24, 79}}, sr.Rect)
 
-		assert.Equal(t, ScrollDown, sr.Vertical)
-		assert.Equal(t, 10, sr.VerticalDistance)
+		assert.Equal(t, ScrollDown, sr.Direction)
+		assert.Equal(t, 10, sr.Distance)
 	})
 
 	n.It("can delete lines by scrolling a region", func(t *testing.T) {
@@ -438,8 +442,8 @@ func TestState(t *testing.T) {
 
 		assert.Equal(t, Rect{Start: Pos{1, 0}, End: Pos{24, 79}}, sr.Rect)
 
-		assert.Equal(t, ScrollUp, sr.Vertical)
-		assert.Equal(t, 1, sr.VerticalDistance)
+		assert.Equal(t, ScrollUp, sr.Direction)
+		assert.Equal(t, 1, sr.Distance)
 
 		sink.scrollRect = nil
 
@@ -452,8 +456,8 @@ func TestState(t *testing.T) {
 
 		assert.Equal(t, Rect{Start: Pos{1, 0}, End: Pos{24, 79}}, sr.Rect)
 
-		assert.Equal(t, ScrollUp, sr.Vertical)
-		assert.Equal(t, 10, sr.VerticalDistance)
+		assert.Equal(t, ScrollUp, sr.Direction)
+		assert.Equal(t, 10, sr.Distance)
 	})
 
 	n.It("can scroll a line to delete characters", func(t *testing.T) {
@@ -473,8 +477,8 @@ func TestState(t *testing.T) {
 
 		assert.Equal(t, Rect{Start: Pos{1, 3}, End: Pos{1, 79}}, sr.Rect)
 
-		assert.Equal(t, ScrollLeft, sr.Horizontal)
-		assert.Equal(t, 1, sr.HorizontalDistance)
+		assert.Equal(t, ScrollLeft, sr.Direction)
+		assert.Equal(t, 1, sr.Distance)
 
 		sink.scrollRect = nil
 
@@ -485,8 +489,8 @@ func TestState(t *testing.T) {
 
 		sr = sink.scrollRect[0]
 
-		assert.Equal(t, ScrollLeft, sr.Horizontal)
-		assert.Equal(t, 10, sr.HorizontalDistance)
+		assert.Equal(t, ScrollLeft, sr.Direction)
+		assert.Equal(t, 10, sr.Distance)
 	})
 
 	n.It("can scroll everything upward", func(t *testing.T) {
@@ -506,8 +510,8 @@ func TestState(t *testing.T) {
 
 		assert.Equal(t, Rect{Start: Pos{0, 0}, End: Pos{24, 79}}, sr.Rect)
 
-		assert.Equal(t, ScrollUp, sr.Vertical)
-		assert.Equal(t, 1, sr.VerticalDistance)
+		assert.Equal(t, ScrollUp, sr.Direction)
+		assert.Equal(t, 1, sr.Distance)
 
 		sink.scrollRect = nil
 
@@ -520,8 +524,8 @@ func TestState(t *testing.T) {
 
 		assert.Equal(t, Rect{Start: Pos{0, 0}, End: Pos{24, 79}}, sr.Rect)
 
-		assert.Equal(t, ScrollUp, sr.Vertical)
-		assert.Equal(t, 10, sr.VerticalDistance)
+		assert.Equal(t, ScrollUp, sr.Direction)
+		assert.Equal(t, 10, sr.Distance)
 	})
 
 	n.It("can scroll everything downward", func(t *testing.T) {
@@ -541,8 +545,8 @@ func TestState(t *testing.T) {
 
 		assert.Equal(t, Rect{Start: Pos{0, 0}, End: Pos{24, 79}}, sr.Rect)
 
-		assert.Equal(t, ScrollDown, sr.Vertical)
-		assert.Equal(t, 1, sr.VerticalDistance)
+		assert.Equal(t, ScrollDown, sr.Direction)
+		assert.Equal(t, 1, sr.Distance)
 
 		sink.scrollRect = nil
 
@@ -555,8 +559,8 @@ func TestState(t *testing.T) {
 
 		assert.Equal(t, Rect{Start: Pos{0, 0}, End: Pos{24, 79}}, sr.Rect)
 
-		assert.Equal(t, ScrollDown, sr.Vertical)
-		assert.Equal(t, 10, sr.VerticalDistance)
+		assert.Equal(t, ScrollDown, sr.Direction)
+		assert.Equal(t, 10, sr.Distance)
 	})
 
 	n.It("can erase characters", func(t *testing.T) {

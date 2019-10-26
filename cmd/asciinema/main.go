@@ -62,6 +62,11 @@ func (d *debugOutput) dump(kind string, args ...interface{}) {
 	fmt.Println()
 }
 
+func (d *debugOutput) MoveCursor(pos state.Pos) error {
+	d.dump("move-cursor", pos)
+	return nil
+}
+
 func (d *debugOutput) SetCell(pos state.Pos, val state.CellRune) error {
 	d.dump("set-cell", pos, val, string(val.Rune))
 	return nil
