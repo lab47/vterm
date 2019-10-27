@@ -69,7 +69,7 @@ func (o *opSink) SetTermProp(p TermAttr, val interface{}) error {
 	return nil
 }
 
-func (o *opSink) SetPenProp(p PenAttr, val interface{}) error {
+func (o *opSink) SetPenProp(p PenAttr, val interface{}, ps PenState) error {
 	name := strings.ToLower(p.String()[len("PenAttr"):])
 	o.penProps = append(o.penProps, prop{name, val})
 	return nil

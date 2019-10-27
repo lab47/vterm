@@ -1,8 +1,5 @@
 package screen
 
-type ScreenPen struct {
-}
-
 type ScreenCell struct {
 	val   rune
 	pen   *ScreenPen

@@ -73,7 +73,7 @@ type Output interface {
 	ScrollRect(s ScrollRect) error
 	Output(data []byte) error
 	SetTermProp(prop TermAttr, val interface{}) error
-	SetPenProp(prop PenAttr, val interface{}) error
+	SetPenProp(prop PenAttr, val interface{}, ps PenState) error
 	StringEvent(kind string, data []byte) error
 }
 

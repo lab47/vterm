@@ -7,6 +7,9 @@ import (
 type Updates interface {
 	DamageDone(r state.Rect) error
 	MoveCursor(p state.Pos) error
+	SetTermProp(attr state.TermAttr, val interface{}) error
+	Output(data []byte) error
+	StringEvent(kind string, data []byte) error
 }
 
 type Screen struct {
@@ -29,6 +32,7 @@ func NewScreen(rows, cols int, updates Updates) (*Screen, error) {
 		updates: updates,
 
 		buffer: NewBuffer(rows, cols),
+		pen:    &ScreenPen{},
 	}
 
 	return screen, nil
@@ -195,17 +199,18 @@ func (s *Screen) ScrollRect(r state.ScrollRect) error {
 }
 
 func (s *Screen) Output(data []byte) error {
-	panic("not implemented")
+	return s.updates.Output(data)
 }
 
 func (s *Screen) SetTermProp(prop state.TermAttr, val interface{}) error {
-	panic("not implemented")
+	return s.updates.SetTermProp(prop, val)
 }
 
-func (s *Screen) SetPenProp(prop state.PenAttr, val interface{}) error {
-	panic("not implemented")
+func (s *Screen) SetPenProp(prop state.PenAttr, val interface{}, ps state.PenState) error {
+	s.pen = &ScreenPen{PenState: ps}
+	return nil
 }
 
 func (s *Screen) StringEvent(kind string, data []byte) error {
-	panic("not implemented")
+	return s.updates.StringEvent(kind, data)
 }
