@@ -22,6 +22,18 @@ func (s *sinkOps) MoveCursor(p state.Pos) error {
 	panic("not implemented")
 }
 
+func (s *sinkOps) Output(b []byte) error {
+	panic("not implemented")
+}
+
+func (s *sinkOps) SetTermProp(prop state.TermAttr, val interface{}) error {
+	panic("not implemented")
+}
+
+func (s *sinkOps) StringEvent(kind string, b []byte) error {
+	panic("not implemented")
+}
+
 func TestScreen(t *testing.T) {
 	n := neko.Modern(t)
 
@@ -98,8 +110,8 @@ func TestScreen(t *testing.T) {
 			End:   state.Pos{Row: 3, Col: 1},
 		}
 
-		screen.getCell(1, 1).reset('a', nil)
-		screen.getCell(2, 1).reset('b', nil)
+		screen.buffer.setCell(1, 1, 'a')
+		screen.buffer.setCell(2, 1, 'b')
 
 		sr := state.ScrollRect{
 			Rect:      rect,
@@ -146,6 +158,42 @@ func TestScreen(t *testing.T) {
 		// Check for the move
 		assert.Equal(t, 'a', screen.getCell(0, 1).val)
 		assert.Equal(t, 'b', screen.getCell(1, 1).val)
+	})
+
+	n.It("can scroll a region up and the old content is erased on a line", func(t *testing.T) {
+		var sink sinkOps
+		screen, err := NewScreen(25, 80, &sink)
+		require.NoError(t, err)
+
+		rect := state.Rect{
+			Start: state.Pos{Row: 0, Col: 1},
+			End:   state.Pos{Row: 2, Col: 3},
+		}
+
+		screen.getCell(1, 1).reset('a', nil)
+		screen.getCell(1, 2).reset('b', nil)
+		screen.getCell(1, 3).reset('c', nil)
+		screen.getCell(2, 1).reset('d', nil)
+
+		sr := state.ScrollRect{
+			Rect:      rect,
+			Direction: state.ScrollUp,
+			Distance:  1,
+		}
+
+		err = screen.ScrollRect(sr)
+		require.NoError(t, err)
+
+		// Check erasure
+		assert.Equal(t, rune(0), screen.getCell(2, 1).val, "old value not erased")
+
+		// Check for the move
+		assert.Equal(t, 'a', screen.getCell(0, 1).val)
+		assert.Equal(t, 'b', screen.getCell(0, 2).val)
+		assert.Equal(t, 'c', screen.getCell(0, 3).val)
+		assert.Equal(t, 'd', screen.getCell(1, 1).val)
+		assert.Equal(t, rune(0), screen.getCell(1, 2).val)
+		assert.Equal(t, rune(0), screen.getCell(1, 3).val)
 	})
 
 	n.Meow()

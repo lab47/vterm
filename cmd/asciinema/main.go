@@ -97,13 +97,18 @@ func (d *debugOutput) SetTermProp(prop state.TermAttr, val interface{}) error {
 	return nil
 }
 
-func (d *debugOutput) SetPenProp(prop state.PenAttr, val interface{}) error {
+func (d *debugOutput) SetPenProp(prop state.PenAttr, val interface{}, ps state.PenState) error {
 	d.dump("set-pen-prop", prop, val)
 	return nil
 }
 
 func (d *debugOutput) StringEvent(kind string, data []byte) error {
 	d.dump("string-event", kind, string(data))
+	return nil
+}
+
+func (d *debugOutput) Resize(rows, cols int, lines []state.LineInfo) error {
+	d.dump("resize", rows, cols)
 	return nil
 }
 

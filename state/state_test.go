@@ -23,6 +23,11 @@ type opSink struct {
 	outputs    [][]byte
 	termProps  []prop
 	penProps   []prop
+
+	resize struct {
+		rows, cols int
+		lines      []LineInfo
+	}
 }
 
 func (o *opSink) SetCell(pos Pos, val CellRune) error {
@@ -80,6 +85,14 @@ func (o *opSink) StringEvent(kind string, data []byte) error {
 }
 
 func (o *opSink) MoveCursor(p Pos) error {
+	return nil
+}
+
+func (o *opSink) Resize(rows, cols int, lines []LineInfo) error {
+	o.resize.rows = rows
+	o.resize.cols = cols
+	o.resize.lines = lines
+
 	return nil
 }
 

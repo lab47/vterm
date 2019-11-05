@@ -46,6 +46,8 @@ func (s Rect) ScrollRight(dist int) ScrollRect {
 
 type ScrollDirection int
 
+//go:generate stringer -type=ScrollDirection
+
 const (
 	ScrollNone  ScrollDirection = iota // don't scroll
 	ScrollUp                           // move the content at the top of the rect to the bottom
@@ -75,6 +77,7 @@ type Output interface {
 	SetTermProp(prop TermAttr, val interface{}) error
 	SetPenProp(prop PenAttr, val interface{}, ps PenState) error
 	StringEvent(kind string, data []byte) error
+	Resize(rows, cols int, lines []LineInfo) error
 }
 
 type modes struct {
@@ -103,6 +106,10 @@ const (
 	MouseRXVT
 )
 
+type LineInfo struct {
+	Continuation bool
+}
+
 type State struct {
 	rows, cols int
 	cursor     Pos
@@ -119,6 +126,8 @@ type State struct {
 	scrollregion struct {
 		top, bottom int
 	}
+
+	lineInfo []LineInfo
 }
 
 var _ parser.EventHandler = &State{}
@@ -129,6 +138,7 @@ func NewState(rows, cols int, output Output) (*State, error) {
 		cols:     cols,
 		output:   output,
 		tabStops: make([]bool, cols),
+		lineInfo: make([]LineInfo, rows),
 	}
 
 	err := screen.Reset()
@@ -156,6 +166,12 @@ func (s *State) Reset() error {
 	s.pen.bgColor = DefaultColor{}
 
 	return nil
+}
+
+func (s *State) Resize(rows, cols int) error {
+	s.rows = rows
+	s.cols = cols
+	return s.output.Resize(rows, cols, s.lineInfo)
 }
 
 func (s *State) HandleEvent(gev parser.Event) error {
@@ -197,6 +213,14 @@ func (s *State) setCursor(p Pos) {
 		case p.Row < 0:
 			p.Row = 0
 		case p.Row >= s.rows:
+			s.output.ScrollRect(ScrollRect{
+				Rect: Rect{
+					Start: Pos{0, 0},
+					End:   Pos{s.rows - 1, s.cols - 1},
+				},
+				Direction: ScrollUp,
+				Distance:  1,
+			})
 			p.Row = s.rows - 1
 		}
 
@@ -224,6 +248,7 @@ func (s *State) advancePos() (Pos, Pos) {
 	if newCur.Col >= s.cols {
 		newCur.Row++
 		newCur.Col = 0
+		s.lineInfo[newCur.Row].Continuation = true
 	}
 
 	return pos, newCur

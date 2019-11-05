@@ -1,7 +1,10 @@
 package screen
 
 import (
+	"errors"
+
 	"github.com/evanphx/vterm/state"
+	"github.com/y0ssar1an/q"
 )
 
 type Updates interface {
@@ -43,9 +46,17 @@ func (s *Screen) getCell(row, col int) *ScreenCell {
 		panic("huh")
 	}
 
-	idx := (s.cols * row) + col
+	return s.buffer.getCell(row, col)
+}
 
-	return s.buffer.getCell(idx)
+var ErrOutOfBounds = errors.New("position of out bounds")
+
+func (s *Screen) GetCell(row, col int) (*ScreenCell, error) {
+	if row < 0 || row >= s.rows || col < 0 || col >= s.cols {
+		return nil, ErrOutOfBounds
+	}
+
+	return s.getCell(row, col), nil
 }
 
 func (s *Screen) damagePos(p state.Pos) error {
@@ -103,11 +114,11 @@ func (s *Screen) ClearRect(r state.Rect) error {
 
 func (s *Screen) slideRectRight(r state.Rect, dist int) error {
 	for row := r.Start.Row; row <= r.End.Row; row++ {
-		start := (s.cols * row) + r.Start.Col
-		dest := (s.cols * row) + (r.Start.Col + dist)
+		start := r.Start.Col
+		dest := r.Start.Col + dist
 
-		s.buffer.move(start, dest, dist)
-		s.buffer.erase(start, dist)
+		s.buffer.moveInRow(row, start, dest, dist)
+		s.buffer.eraseInRow(row, start, dist)
 	}
 
 	return nil
@@ -115,11 +126,11 @@ func (s *Screen) slideRectRight(r state.Rect, dist int) error {
 
 func (s *Screen) slideRectLeft(r state.Rect, dist int) error {
 	for row := r.Start.Row; row <= r.End.Row; row++ {
-		start := (s.cols * row) + r.Start.Col
-		dest := (s.cols * row) + (r.Start.Col - dist)
+		start := r.Start.Col
+		dest := r.Start.Col - dist
 
-		s.buffer.move(start, dest, dist)
-		s.buffer.erase(start, dist)
+		s.buffer.moveInRow(row, start, dest, dist)
+		s.buffer.eraseInRow(row, start, dist)
 	}
 
 	return nil
@@ -129,16 +140,11 @@ func (s *Screen) slideRectDown(r state.Rect, dist int) error {
 	cols := r.End.Col - r.Start.Col + 1
 
 	for row := r.End.Row; row >= r.Start.Row; row-- {
-		start := (s.cols * row) + r.Start.Col
-		dest := (s.cols * (row + dist)) + r.Start.Col
-
-		s.buffer.move(start, dest, cols)
+		s.buffer.moveBetweenRows(row, row+dist, r.Start.Col, cols)
 	}
 
 	for row := r.Start.Row; row < r.Start.Row+dist; row++ {
-		start := (s.cols * row) + r.Start.Col
-
-		s.buffer.erase(start, cols)
+		s.buffer.eraseInRow(row, r.Start.Col, cols)
 	}
 
 	return nil
@@ -148,54 +154,56 @@ func (s *Screen) slideRectUp(r state.Rect, dist int) error {
 	cols := r.End.Col - r.Start.Col + 1
 
 	for row := r.Start.Row; row <= r.End.Row; row++ {
-		start := (s.cols * row) + r.Start.Col
-		dest := (s.cols * (row - dist)) + r.Start.Col
-
-		s.buffer.move(start, dest, cols)
+		s.buffer.moveBetweenRows(row, row-dist, r.Start.Col, cols)
 	}
 
 	for row := r.End.Row; row < r.End.Row+dist; row++ {
-		start := (s.cols * row) + r.Start.Col
-
-		s.buffer.erase(start, cols)
+		s.buffer.eraseInRow(row, r.Start.Col, cols)
 	}
 
 	return nil
 }
 
-func (s *Screen) eraseRect(r state.Rect) {
-	for row := r.Start.Row; row < s.rows && row <= r.End.Row; row++ {
-		start := (s.cols * row) + r.Start.Col
-
-		s.buffer.erase(start, r.End.Col-r.Start.Col+1)
-	}
-}
-
 func (s *Screen) ScrollRect(r state.ScrollRect) error {
+	q.Q(r, r.Direction.String())
 	switch r.Direction {
 	case state.ScrollRight:
 		sr := r.Rect
 		sr.End.Col -= r.Distance
 
-		return s.slideRectRight(sr, r.Distance)
+		err := s.slideRectRight(sr, r.Distance)
+		if err != nil {
+			return err
+		}
 	case state.ScrollLeft:
 		sr := r.Rect
 		sr.Start.Col += r.Distance
 
-		return s.slideRectLeft(sr, r.Distance)
+		err := s.slideRectLeft(sr, r.Distance)
+		if err != nil {
+			return err
+		}
 	case state.ScrollDown:
 		sr := r.Rect
 		sr.End.Row -= r.Distance
 
-		return s.slideRectDown(sr, r.Distance)
+		err := s.slideRectDown(sr, r.Distance)
+		if err != nil {
+			return err
+		}
 	case state.ScrollUp:
 		sr := r.Rect
 		sr.Start.Row += r.Distance
 
-		return s.slideRectUp(sr, r.Distance)
+		err := s.slideRectUp(sr, r.Distance)
+		if err != nil {
+			return err
+		}
 	default:
 		return nil
 	}
+
+	return s.damageRect(r.Rect)
 }
 
 func (s *Screen) Output(data []byte) error {
