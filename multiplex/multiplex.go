@@ -9,6 +9,7 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 
 	"github.com/creack/pty"
+	"github.com/evanphx/vterm/parser"
 	"github.com/evanphx/vterm/screen"
 	"github.com/evanphx/vterm/state"
 	"github.com/gdamore/tcell/terminfo"
@@ -24,6 +25,11 @@ type Multiplexer struct {
 	in, out *os.File
 
 	buf []byte
+
+	focusTerm  *Term
+	focusInput io.Writer
+
+	curPos state.Pos
 }
 
 func (m *Multiplexer) Init() error {
@@ -61,6 +67,7 @@ func (m *Multiplexer) Init() error {
 	m.ti.TPuts(m.out, m.ti.EnterCA)
 	m.ti.TPuts(m.out, m.ti.EnableAcs)
 	m.ti.TPuts(m.out, m.ti.Clear)
+	m.ti.TPuts(m.out, m.ti.TParm(m.ti.MouseMode, 1))
 
 	m.DrawHorizLine(state.Pos{Row: 1, Col: 0}, cols)
 	m.DrawVerticalLine(state.Pos{Row: 0, Col: 2}, rows)
@@ -68,13 +75,21 @@ func (m *Multiplexer) Init() error {
 	return nil
 }
 
-func (m *Multiplexer) Run(cmd *exec.Cmd) (io.Writer, error) {
+func (m *Multiplexer) Run(cmd *exec.Cmd) error {
 	term, err := NewTerm(m, cmd)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return term.Start(m.rows-2, m.cols-3, 2, 3)
+	w, err := term.Start(m.rows-2, m.cols-3, 2, 3)
+	if err != nil {
+		return err
+	}
+
+	m.focusTerm = term
+	m.focusInput = w
+
+	return nil
 }
 
 func (m *Multiplexer) setCell(p state.Pos, val rune, pen *screen.ScreenPen) error {
@@ -92,18 +107,73 @@ func (m *Multiplexer) setCell(p state.Pos, val rune, pen *screen.ScreenPen) erro
 	n := utf8.EncodeRune(m.buf, val)
 
 	_, err := m.out.Write(m.buf[:n])
+	if err != nil {
+		return err
+	}
+
+	if m.curPos.Col < m.cols {
+		m.curPos.Col++
+	}
+
 	return err
 }
 
 func (m *Multiplexer) moveCursor(p state.Pos) error {
-	m.ti.TPuts(m.out, m.ti.TGoto(p.Col, p.Row))
+	if m.curPos != p {
+		m.ti.TPuts(m.out, m.ti.TGoto(p.Col, p.Row))
+		m.curPos = p
+	}
+
 	return nil
 }
 
 func (m *Multiplexer) Cleanup() {
+	m.ti.TPuts(m.out, m.ti.TParm(m.ti.MouseMode, 0))
 	m.ti.TPuts(m.out, m.ti.AttrOff)
 	m.ti.TPuts(m.out, m.ti.Clear)
 	m.ti.TPuts(m.out, m.ti.ExitCA)
 
 	terminal.Restore(int(m.in.Fd()), m.st)
+}
+
+func (m *Multiplexer) HandleEvent(ev parser.Event) error {
+	var err error
+
+	switch ev := ev.(type) {
+	case *parser.TextEvent:
+		_, err = m.focusInput.Write(ev.Text)
+	case *parser.ControlEvent:
+		_, err = m.focusInput.Write([]byte{ev.Control})
+	default:
+		err = nil
+	}
+
+	return err
+}
+
+func (m *Multiplexer) InputData(r io.Reader) error {
+	/*
+			pr, pw := io.Pipe()
+
+			go func() {
+				buf := make([]byte, 8)
+
+				for {
+					n, err := pr.Read(buf)
+					if err != nil {
+						return
+					}
+
+					q.Q(buf[:n])
+				}
+			}()
+
+		x := io.TeeReader(r, pw)
+	*/
+	p, err := parser.NewParser(r, m)
+	if err != nil {
+		return err
+	}
+
+	return p.Drive()
 }

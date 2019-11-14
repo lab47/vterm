@@ -7,6 +7,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/gdamore/tcell v1.3.0
 	github.com/hashicorp/go-hclog v0.9.2
+	github.com/pkg/profile v1.3.0
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.4.0
 	github.com/vektra/neko v0.0.0-20170502000624-99acbdf12420

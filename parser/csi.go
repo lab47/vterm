@@ -16,6 +16,7 @@ func INTERMED(i, b byte) CSICommand {
 }
 
 var (
+	MOUSE    CSICommand = 0x3c
 	ICH      CSICommand = 0x40
 	CUU      CSICommand = 0x41
 	CUD      CSICommand = 0x42
@@ -73,6 +74,7 @@ func (c CSICommand) String() string {
 }
 
 var CSICodes = map[CSICommand]CSICode{
+	0x3c:                 {"MOUSE", "XTerm Mouse Event"},
 	0x40:                 {"ICH", "ECMA-48 8.3.64"},
 	0x41:                 {"CUU", "ECMA-48 8.3.22"},
 	0x42:                 {"CUD", "ECMA-48 8.3.19"},

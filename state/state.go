@@ -360,6 +360,8 @@ var csiHandlers = map[parser.CSICommand]func(*State, *parser.CSIEvent) error{
 	parser.DECSTR: (*State).softReset,
 
 	parser.DECSTBM: (*State).setTopBottomMargin,
+
+	parser.MOUSE: (*State).mouseEvent,
 }
 
 func (s *State) handleCSI(ev *parser.CSIEvent) error {

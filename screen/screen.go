@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/evanphx/vterm/state"
-	"github.com/y0ssar1an/q"
 )
 
 type Updates interface {
@@ -49,6 +48,10 @@ func (s *Screen) getCell(row, col int) *ScreenCell {
 	return s.buffer.getCell(row, col)
 }
 
+func (s *Screen) setCell(row, col int, cell ScreenCell) {
+	s.buffer.setCell(row, col, cell)
+}
+
 var ErrOutOfBounds = errors.New("position of out bounds")
 
 func (s *Screen) GetCell(row, col int) (*ScreenCell, error) {
@@ -72,15 +75,7 @@ func (s *Screen) MoveCursor(pos state.Pos) error {
 }
 
 func (s *Screen) SetCell(pos state.Pos, val state.CellRune) error {
-	cell := s.getCell(pos.Row, pos.Col)
-	if cell == nil {
-		return nil
-	}
-
-	err := cell.reset(val.Rune, s.pen)
-	if err != nil {
-		return err
-	}
+	s.setCell(pos.Row, pos.Col, ScreenCell{val: val.Rune, pen: s.pen})
 
 	return s.damagePos(pos)
 
@@ -165,7 +160,6 @@ func (s *Screen) slideRectUp(r state.Rect, dist int) error {
 }
 
 func (s *Screen) ScrollRect(r state.ScrollRect) error {
-	q.Q(r, r.Direction.String())
 	switch r.Direction {
 	case state.ScrollRight:
 		sr := r.Rect

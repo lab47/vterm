@@ -1,12 +1,12 @@
 package main
 
 import (
-	"io"
 	"log"
 	"os"
 	"os/exec"
 
 	"github.com/evanphx/vterm/multiplex"
+	"github.com/pkg/profile"
 )
 
 func realMain() {
@@ -21,12 +21,16 @@ func realMain() {
 
 	cmd := exec.Command("zsh", "-l")
 
-	w, err := m.Run(cmd)
+	err = m.Run(cmd)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	io.Copy(w, os.Stdin)
+	if os.Getenv("PROFILE") != "" {
+		defer profile.Start(profile.ProfilePath(".")).Stop()
+	}
+
+	m.InputData(os.Stdin)
 }
 
 func main() {

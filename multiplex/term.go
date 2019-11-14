@@ -14,7 +14,8 @@ import (
 )
 
 type Term struct {
-	m *Multiplexer
+	m      *Multiplexer
+	cmdbuf *CommandBuffer
 
 	screen *screen.Screen
 	cmd    *exec.Cmd
@@ -28,12 +29,15 @@ type Term struct {
 	pendingDamage []state.Rect
 
 	cursorPos state.Pos
+
+	used []int
 }
 
 func NewTerm(m *Multiplexer, cmd *exec.Cmd) (*Term, error) {
 	widget := &Term{
-		m:   m,
-		cmd: cmd,
+		m:      m,
+		cmdbuf: m.NewCommandBuffer(),
+		cmd:    cmd,
 	}
 
 	return widget, nil
@@ -55,6 +59,20 @@ func (w *Term) Draw() {
 func (w *Term) Resize(rows, cols int) {
 	w.cols, w.rows = rows, cols
 	pty.Setsize(w.f, w.currentSize())
+
+	w.updateUsed()
+}
+
+func (w *Term) updateUsed() {
+	if len(w.used) == 0 {
+		w.used = make([]int, w.cols)
+	} else if w.cols > len(w.used) {
+		for i := 0; i < w.cols-len(w.used); i++ {
+			w.used = append(w.used, 0)
+		}
+	} else if len(w.used) > w.cols {
+		w.used = w.used[:w.cols]
+	}
 }
 
 func (w *Term) currentSize() *pty.Winsize {
@@ -70,6 +88,8 @@ func (w *Term) Start(rows, cols, roffset, coffset int) (io.Writer, error) {
 	w.cols = cols
 	w.roffset = roffset
 	w.coffset = coffset
+
+	w.updateUsed()
 
 	out, err := pty.StartWithSize(w.cmd, w.currentSize())
 	if err != nil {
@@ -132,8 +152,12 @@ func (w *Term) DamageDone(r state.Rect) error {
 
 func (w *Term) applyDamage(r state.Rect) error {
 	defer w.MoveCursor(w.cursorPos)
+	defer w.cmdbuf.Flush()
 
 	for row := r.Start.Row; row <= r.End.Row; row++ {
+		// used := w.used[row]
+		max := -1
+
 		for col := r.Start.Col; col <= r.End.Col; col++ {
 			cell, err := w.screen.GetCell(row, col)
 			if err != nil {
@@ -142,12 +166,24 @@ func (w *Term) applyDamage(r state.Rect) error {
 
 			val, _ := cell.Value()
 
+			/*
+				if val == 0 {
+					if col < used {
+						w.cmdbuf.SetCell(state.Pos{Row: row + w.roffset, Col: col + w.coffset}, ' ', cell.Pen())
+					}
+				} else {
+					max = col
+				}
+			*/
+
 			if val == 0 {
 				val = ' '
 			}
 
-			w.m.setCell(state.Pos{Row: row + w.roffset, Col: col + w.coffset}, val, cell.Pen())
+			w.cmdbuf.SetCell(state.Pos{Row: row + w.roffset, Col: col + w.coffset}, val, cell.Pen())
 		}
+
+		w.used[row] = max + 1
 	}
 
 	return nil

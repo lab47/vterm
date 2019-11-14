@@ -132,6 +132,12 @@ func (p *Parser) Drive() error {
 			if err != nil {
 				return err
 			}
+
+			// optimization because it's really common to get here and have just one single character
+			// in the buffer we need to emit immediately.
+			if p.plain.Len() > 0 && p.br.Buffered() == 0 {
+				p.readSpan()
+			}
 		}
 	}
 }
