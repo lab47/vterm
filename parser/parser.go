@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type EventHandler interface {
@@ -142,31 +143,53 @@ func (p *Parser) Drive() error {
 	}
 }
 
+var textPool sync.Pool
+
+func init() {
+	textPool.New = func() interface{} {
+		return &TextEvent{
+			Text: make([]byte, 0, 128),
+		}
+	}
+}
+
 type TextEvent struct {
 	Text []byte
 }
 
+func (ev *TextEvent) Recycle() {
+	textPool.Put(ev)
+}
+
 func (p *Parser) readSpan() error {
-	buf := make([]byte, p.plain.Len())
+	ev := textPool.Get().(*TextEvent)
+
+	var buf []byte
+
+	if cap(ev.Text) > p.plain.Len() {
+		buf = ev.Text[:p.plain.Len()]
+	} else {
+		buf = make([]byte, p.plain.Len())
+	}
+
+	ev.Text = buf
 
 	_, err := p.plain.Read(buf)
 	if err != nil {
 		return err
 	}
 
-	return p.handler.HandleEvent(&TextEvent{buf})
+	return p.handler.HandleEvent(ev)
 }
 
-type ControlEvent struct {
-	Control byte
-}
+type ControlEvent byte
 
-func (c *ControlEvent) String() string {
-	return fmt.Sprintf("CTL: %#v (0x%x)", string(c.Control), c.Control)
+func (c ControlEvent) String() string {
+	return fmt.Sprintf("CTL: %#v (0x%x)", string(c), byte(c))
 }
 
 func (p *Parser) readControl(b byte) error {
-	return p.handler.HandleEvent(&ControlEvent{b})
+	return p.handler.HandleEvent(ControlEvent(b))
 }
 
 func isIntermed(b byte) bool {
@@ -297,6 +320,18 @@ top:
 	}
 }
 
+var csiEvents sync.Pool
+
+func init() {
+	csiEvents.New = func() interface{} {
+		return &CSIEvent{
+			Args:     make([]int, 5),
+			Leader:   make([]byte, 2),
+			Intermed: make([]byte, 2),
+		}
+	}
+}
+
 type CSIEvent struct {
 	Command  byte
 	Leader   []byte
@@ -317,6 +352,10 @@ func (c *CSIEvent) CSICommand() CSICommand {
 	return idx
 }
 
+func (c *CSIEvent) Recycle() {
+	csiEvents.Put(c)
+}
+
 func (c *CSIEvent) String() string {
 	cmd := c.CSICommand()
 
@@ -330,24 +369,26 @@ func (p *Parser) readCSI() error {
 		INTERMED = 3
 	)
 
+	ev := csiEvents.Get().(*CSIEvent)
+
 	var (
-		leader   []byte
-		state    int = LEADER
-		arg      int = -1
-		args     []int
-		intermed []byte
+		leader   []byte = ev.Leader[:0]
+		state    int    = LEADER
+		arg      int    = -1
+		args     []int  = ev.Args[:0]
+		intermed []byte = ev.Intermed[:0]
 	)
 
 top:
 	for {
 		b, err := p.br.ReadByte()
 		if err != nil {
-			p.handler.HandleEvent(&CSIEvent{
-				Command:  b,
-				Leader:   leader,
-				Args:     args,
-				Intermed: intermed,
-			})
+			ev.Command = b
+			ev.Leader = leader
+			ev.Args = args
+			ev.Intermed = intermed
+
+			p.handler.HandleEvent(ev)
 			return err
 		}
 
@@ -410,12 +451,12 @@ top:
 			case b == ESC:
 				return nil
 			case b >= 0x40 && b <= 0x7e:
-				return p.handler.HandleEvent(&CSIEvent{
-					Command:  b,
-					Leader:   leader,
-					Args:     args,
-					Intermed: intermed,
-				})
+				ev.Command = b
+				ev.Leader = leader
+				ev.Args = args
+				ev.Intermed = intermed
+
+				return p.handler.HandleEvent(ev)
 			}
 
 			// Invalid in CSI, cancel it.

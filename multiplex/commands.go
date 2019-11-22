@@ -8,15 +8,18 @@ import (
 	"github.com/evanphx/vterm/state"
 )
 
+const DefaultCommandBufferSize = 64 * 1024
+
 func (m *Multiplexer) NewCommandBuffer() *CommandBuffer {
 	return &CommandBuffer{
-		m: m,
+		m:   m,
+		buf: bytes.NewBuffer(make([]byte, 0, DefaultCommandBufferSize)),
 	}
 }
 
 type CommandBuffer struct {
 	m   *Multiplexer
-	buf bytes.Buffer
+	buf *bytes.Buffer
 
 	setPos bool
 	cursor state.Pos
@@ -44,7 +47,8 @@ func (cb *CommandBuffer) samePen(pen *screen.ScreenPen) bool {
 
 func (cb *CommandBuffer) SetCell(p state.Pos, val rune, pen *screen.ScreenPen) error {
 	if !cb.setPos || cb.cursor != p {
-		cb.m.ti.TPuts(&cb.buf, cb.m.ti.TGoto(p.Col, p.Row))
+		cb.m.ti.TParmf(cb.buf, cb.m.ti.SetCursor, p.Row, p.Col)
+		// cb.m.ti.TPuts(&cb.buf, cb.m.ti.TGoto(p.Col, p.Row))
 		cb.cursor = p
 		cb.setPos = true
 	}
@@ -53,9 +57,11 @@ func (cb *CommandBuffer) SetCell(p state.Pos, val rune, pen *screen.ScreenPen) e
 		if !cb.samePen(pen) {
 			switch c := pen.FGColor().(type) {
 			case state.IndexColor:
-				cb.m.ti.TPuts(&cb.buf, cb.m.ti.TColor(c.Index, -1))
+				cb.m.ti.TParmf(cb.buf, cb.m.ti.SetFg, c.Index)
+				// cb.m.ti.TPuts(&cb.buf, cb.m.ti.TColor(c.Index, -1))
 			case state.DefaultColor:
-				cb.m.ti.TPuts(&cb.buf, cb.m.ti.AttrOff)
+				cb.m.ti.TParmf(cb.buf, cb.m.ti.AttrOff)
+				// cb.m.ti.TPuts(&cb.buf, cb.m.ti.AttrOff)
 			}
 		}
 
@@ -70,7 +76,7 @@ func (cb *CommandBuffer) SetCell(p state.Pos, val rune, pen *screen.ScreenPen) e
 }
 
 func (cb *CommandBuffer) Flush() error {
-	_, err := io.Copy(cb.m.out, &cb.buf)
+	_, err := io.Copy(cb.m.out, cb.buf)
 	if err != nil {
 		return err
 	}

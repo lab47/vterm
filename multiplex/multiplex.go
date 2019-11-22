@@ -4,17 +4,20 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/ssh/terminal"
 
 	"github.com/creack/pty"
-	"github.com/evanphx/vterm/parser"
+	"github.com/evanphx/vterm/pkg/terminfo"
+	"github.com/evanphx/vterm/pkg/terminfo/dynamic"
 	"github.com/evanphx/vterm/screen"
 	"github.com/evanphx/vterm/state"
-	"github.com/gdamore/tcell/terminfo"
-	"github.com/gdamore/tcell/terminfo/dynamic"
+	"github.com/y0ssar1an/q"
 )
+
+const mouseMode = "%?%p1%{1}%=%t%'h'%Pa%e%'l'%Pa%;\x1b[?1000%ga%c\x1b[?1002%ga%c\x1b[?1006%ga%c"
 
 type Multiplexer struct {
 	ti *terminfo.Terminfo
@@ -30,6 +33,8 @@ type Multiplexer struct {
 	focusInput io.Writer
 
 	curPos state.Pos
+
+	inputData time.Time
 }
 
 func (m *Multiplexer) Init() error {
@@ -67,7 +72,7 @@ func (m *Multiplexer) Init() error {
 	m.ti.TPuts(m.out, m.ti.EnterCA)
 	m.ti.TPuts(m.out, m.ti.EnableAcs)
 	m.ti.TPuts(m.out, m.ti.Clear)
-	m.ti.TPuts(m.out, m.ti.TParm(m.ti.MouseMode, 1))
+	m.ti.TPuts(m.out, m.ti.TParm(mouseMode, 1))
 
 	m.DrawHorizLine(state.Pos{Row: 1, Col: 0}, cols)
 	m.DrawVerticalLine(state.Pos{Row: 0, Col: 2}, rows)
@@ -120,7 +125,8 @@ func (m *Multiplexer) setCell(p state.Pos, val rune, pen *screen.ScreenPen) erro
 
 func (m *Multiplexer) moveCursor(p state.Pos) error {
 	if m.curPos != p {
-		m.ti.TPuts(m.out, m.ti.TGoto(p.Col, p.Row))
+		m.ti.TParmf(m.out, m.ti.SetCursor, p.Row, p.Col)
+		// m.ti.TPuts(m.out, m.ti.TGoto(p.Col, p.Row))
 		m.curPos = p
 	}
 
@@ -128,7 +134,7 @@ func (m *Multiplexer) moveCursor(p state.Pos) error {
 }
 
 func (m *Multiplexer) Cleanup() {
-	m.ti.TPuts(m.out, m.ti.TParm(m.ti.MouseMode, 0))
+	m.ti.TPuts(m.out, m.ti.TParm(mouseMode, 0))
 	m.ti.TPuts(m.out, m.ti.AttrOff)
 	m.ti.TPuts(m.out, m.ti.Clear)
 	m.ti.TPuts(m.out, m.ti.ExitCA)
@@ -136,19 +142,34 @@ func (m *Multiplexer) Cleanup() {
 	terminal.Restore(int(m.in.Fd()), m.st)
 }
 
-func (m *Multiplexer) HandleEvent(ev parser.Event) error {
+func (m *Multiplexer) HandleInput(ev Event) error {
 	var err error
 
 	switch ev := ev.(type) {
-	case *parser.TextEvent:
-		_, err = m.focusInput.Write(ev.Text)
-	case *parser.ControlEvent:
-		_, err = m.focusInput.Write([]byte{ev.Control})
+	case TextEvent:
+		_, err = m.focusInput.Write([]byte(ev))
+	case ControlEvent:
+		_, err = m.focusInput.Write([]byte{byte(ev)})
 	default:
 		err = nil
 	}
 
 	return err
+}
+
+type timerReader struct {
+	io.Reader
+	m *Multiplexer
+}
+
+func (t *timerReader) Read(b []byte) (int, error) {
+	n, err := t.Reader.Read(b)
+
+	q.Q(b[:n])
+
+	t.m.inputData = time.Now()
+
+	return n, err
 }
 
 func (m *Multiplexer) InputData(r io.Reader) error {
@@ -170,10 +191,11 @@ func (m *Multiplexer) InputData(r io.Reader) error {
 
 		x := io.TeeReader(r, pw)
 	*/
-	p, err := parser.NewParser(r, m)
+	ip, err := NewInputReader(r, m)
+	// p, err := parser.NewParser(&timerReader{r, m}, m)
 	if err != nil {
 		return err
 	}
 
-	return p.Drive()
+	return ip.Drive()
 }

@@ -6,11 +6,13 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/evanphx/vterm/parser"
 	"github.com/evanphx/vterm/screen"
 	"github.com/evanphx/vterm/state"
+	"github.com/y0ssar1an/q"
 )
 
 type Term struct {
@@ -31,13 +33,16 @@ type Term struct {
 	cursorPos state.Pos
 
 	used []int
+
+	newDamage chan state.Rect
 }
 
 func NewTerm(m *Multiplexer, cmd *exec.Cmd) (*Term, error) {
 	widget := &Term{
-		m:      m,
-		cmdbuf: m.NewCommandBuffer(),
-		cmd:    cmd,
+		m:         m,
+		cmdbuf:    m.NewCommandBuffer(),
+		cmd:       cmd,
+		newDamage: make(chan state.Rect),
 	}
 
 	return widget, nil
@@ -136,12 +141,61 @@ func (w *Term) begin() error {
 
 	w.screen = screen
 
+	go w.draw()
+
 	return nil
 }
 
+func (w *Term) draw() {
+	tick := time.NewTicker(time.Second / 60)
+	defer tick.Stop()
+
+	var damage []state.Rect
+
+	for {
+		select {
+		case r := <-w.newDamage:
+			if len(damage) == 0 && w.smallRect(r) {
+				if !w.m.inputData.IsZero() {
+					q.Q(time.Since(w.m.inputData).String())
+					w.m.inputData = time.Time{}
+				}
+				w.applyDamage(r)
+			} else {
+				damage = append(damage, r)
+			}
+		case <-tick.C:
+			for _, r := range damage {
+				w.applyDamage(r)
+			}
+
+			damage = damage[:0]
+		}
+	}
+}
+
+const cellThreshold = 100
+
+func (w *Term) smallRect(r state.Rect) bool {
+	area := (r.End.Col - r.Start.Col) * (r.End.Row - r.Start.Row)
+
+	return area < cellThreshold
+}
+
 func (w *Term) DamageDone(r state.Rect) error {
-	w.damageLock.Lock()
-	defer w.damageLock.Unlock()
+	// w.newDamage <- r
+
+	// return nil
+
+	// w.damageLock.Lock()
+	// defer w.damageLock.Unlock()
+
+	/*
+		if !w.m.inputData.IsZero() {
+			q.Q(time.Since(w.m.inputData).String())
+			w.m.inputData = time.Time{}
+		}
+	*/
 
 	return w.applyDamage(r)
 

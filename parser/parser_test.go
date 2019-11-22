@@ -57,10 +57,10 @@ func TestParser(t *testing.T) {
 
 			require.Equal(t, 1, len(c.Events))
 
-			ev, ok := c.Events[0].(*ControlEvent)
+			ev, ok := c.Events[0].(ControlEvent)
 			require.True(t, ok)
 
-			assert.Equal(t, i, ev.Control)
+			assert.Equal(t, i, byte(ev))
 		}
 	})
 
@@ -87,10 +87,10 @@ func TestParser(t *testing.T) {
 
 			require.Equal(t, 1, len(c.Events))
 
-			ev, ok := c.Events[0].(*ControlEvent)
+			ev, ok := c.Events[0].(ControlEvent)
 			require.True(t, ok)
 
-			assert.Equal(t, ctl[idx], ev.Control)
+			assert.Equal(t, ctl[idx], byte(ev))
 		}
 	})
 
@@ -132,10 +132,10 @@ func TestParser(t *testing.T) {
 
 		assert.Equal(t, "1", string(ev.Text))
 
-		cev, ok := c.Events[1].(*ControlEvent)
+		cev, ok := c.Events[1].(ControlEvent)
 		require.True(t, ok)
 
-		assert.Equal(t, byte('\n'), cev.Control)
+		assert.Equal(t, byte('\n'), byte(cev))
 
 		ev, ok = c.Events[2].(*TextEvent)
 		require.True(t, ok)
@@ -214,10 +214,10 @@ func TestParser(t *testing.T) {
 
 		require.Equal(t, 2, len(c.Events))
 
-		ev, ok := c.Events[0].(*ControlEvent)
+		ev, ok := c.Events[0].(ControlEvent)
 		require.True(t, ok)
 
-		assert.Equal(t, byte('\n'), ev.Control)
+		assert.Equal(t, byte('\n'), byte(ev))
 
 		cev, ok := c.Events[1].(*EscapeEvent)
 		require.True(t, ok)
@@ -226,25 +226,41 @@ func TestParser(t *testing.T) {
 	})
 
 	csi := func(command byte, args ...int) *CSIEvent {
+		if args == nil {
+			args = make([]int, 0)
+		}
+
 		return &CSIEvent{
-			Command: command,
-			Args:    args,
+			Command:  command,
+			Args:     args,
+			Leader:   make([]byte, 0),
+			Intermed: make([]byte, 0),
 		}
 	}
 
 	csiL := func(command byte, leader []byte, args ...int) *CSIEvent {
+		if args == nil {
+			args = make([]int, 0)
+		}
+
 		return &CSIEvent{
-			Command: command,
-			Leader:  leader,
-			Args:    args,
+			Command:  command,
+			Leader:   leader,
+			Args:     args,
+			Intermed: make([]byte, 0),
 		}
 	}
 
 	csiI := func(command byte, intermed []byte, args ...int) *CSIEvent {
+		if args == nil {
+			args = make([]int, 0)
+		}
+
 		return &CSIEvent{
 			Command:  command,
 			Args:     args,
 			Intermed: intermed,
+			Leader:   make([]byte, 0),
 		}
 	}
 
@@ -371,10 +387,10 @@ func TestParser(t *testing.T) {
 
 		require.Equal(t, 2, len(c.Events))
 
-		cev, ok := c.Events[0].(*ControlEvent)
+		cev, ok := c.Events[0].(ControlEvent)
 		require.True(t, ok)
 
-		assert.Equal(t, byte(10), cev.Control)
+		assert.Equal(t, byte(10), byte(cev))
 
 		ev, ok := c.Events[1].(*CSIEvent)
 		require.True(t, ok)
@@ -461,10 +477,10 @@ func TestParser(t *testing.T) {
 
 		require.Equal(t, 2, len(c.Events))
 
-		cev, ok := c.Events[0].(*ControlEvent)
+		cev, ok := c.Events[0].(ControlEvent)
 		require.True(t, ok)
 
-		assert.Equal(t, byte(10), cev.Control)
+		assert.Equal(t, byte(10), byte(cev))
 
 		ev, ok := c.Events[1].(*OSCEvent)
 		require.True(t, ok)
@@ -551,10 +567,10 @@ func TestParser(t *testing.T) {
 
 		require.Equal(t, 2, len(c.Events))
 
-		cev, ok := c.Events[0].(*ControlEvent)
+		cev, ok := c.Events[0].(ControlEvent)
 		require.True(t, ok)
 
-		assert.Equal(t, byte(10), cev.Control)
+		assert.Equal(t, byte(10), byte(cev))
 
 		ev, ok := c.Events[1].(*StringEvent)
 		require.True(t, ok)
@@ -570,8 +586,8 @@ func TestParser(t *testing.T) {
 		}{
 			{"a\x00b", &TextEvent{Text: []byte("ab")}},
 			{"a\x7fb", &TextEvent{Text: []byte("ab")}},
-			{"\x1b[12\x003m", &CSIEvent{Command: 0x6d, Args: []int{123}}},
-			{"\x1b[12\x7f3m", &CSIEvent{Command: 0x6d, Args: []int{123}}},
+			{"\x1b[12\x003m", csi(0x6d, 123)},
+			{"\x1b[12\x7f3m", csi(0x6d, 123)},
 		}
 
 		for _, test := range tests {
@@ -587,6 +603,25 @@ func TestParser(t *testing.T) {
 
 			assert.Equal(t, test.event, c.Events[0])
 		}
+	})
+
+	n.It("handles utf-8 runes properly", func(t *testing.T) {
+		str := "\xe2\x9d\xaf"
+		input := strings.NewReader(str)
+
+		var c collectEvents
+		pr, err := NewParser(input, &c)
+		require.NoError(t, err)
+
+		err = pr.Drive()
+		require.Error(t, err, io.EOF)
+
+		require.Equal(t, 1, len(c.Events))
+
+		te, ok := c.Events[0].(*TextEvent)
+		require.True(t, ok)
+
+		assert.Equal(t, []byte(str), te.Text)
 	})
 
 	n.Meow()

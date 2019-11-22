@@ -177,15 +177,18 @@ func (s *State) Resize(rows, cols int) error {
 func (s *State) HandleEvent(gev parser.Event) error {
 	switch ev := gev.(type) {
 	case *parser.TextEvent:
-		return s.writeData(ev.Text)
-	case *parser.ControlEvent:
-		return s.handleControl(ev.Control)
+		return s.writeData(ev)
+	case parser.ControlEvent:
+		return s.handleControl(byte(ev))
 	case *parser.CSIEvent:
 		return s.handleCSI(ev)
 	case *parser.StringEvent:
 		return s.handleString(ev)
 	case *parser.OSCEvent:
 		return s.handleOSC(ev)
+	case *parser.EscapeEvent:
+		// eventually
+		return nil
 	default:
 		return fmt.Errorf("unhandled event type: %T", ev)
 	}
@@ -254,7 +257,10 @@ func (s *State) advancePos() (Pos, Pos) {
 	return pos, newCur
 }
 
-func (s *State) writeData(data []byte) error {
+func (s *State) writeData(ev *parser.TextEvent) error {
+	defer ev.Recycle()
+	data := ev.Text
+
 	for len(data) > 0 {
 		r, sz := utf8.DecodeRune(data)
 
@@ -370,6 +376,8 @@ func (s *State) handleCSI(ev *parser.CSIEvent) error {
 	if !ok {
 		return fmt.Errorf("unhandled CSI command: (%s) %x", cmd, ev.Command)
 	}
+
+	defer ev.Recycle()
 
 	return f(s, ev)
 }
