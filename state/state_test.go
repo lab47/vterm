@@ -207,9 +207,7 @@ func TestState(t *testing.T) {
 		state.cursor = Pos{0, 3}
 
 		for _, test := range tests {
-			err = state.HandleEvent(&parser.ControlEvent{
-				Control: test.control,
-			})
+			err = state.HandleEvent(parser.ControlEvent(test.control))
 
 			require.NoError(t, err)
 

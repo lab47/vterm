@@ -1,11 +1,13 @@
 package multiplex
 
 import (
+	"context"
 	"io"
 	"log"
 	"os"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/creack/pty"
@@ -16,10 +18,15 @@ import (
 )
 
 type Term struct {
+	id     int
 	m      *Multiplexer
 	cmdbuf *CommandBuffer
 
+	mu sync.Mutex
+
+	parser *parser.Parser
 	screen *screen.Screen
+	state  *state.State
 	cmd    *exec.Cmd
 
 	rows, cols       int
@@ -37,8 +44,11 @@ type Term struct {
 	newDamage chan state.Rect
 }
 
+var termId int32
+
 func NewTerm(m *Multiplexer, cmd *exec.Cmd) (*Term, error) {
 	widget := &Term{
+		id:        int(atomic.AddInt32(&termId, 1)),
 		m:         m,
 		cmdbuf:    m.NewCommandBuffer(),
 		cmd:       cmd,
@@ -66,6 +76,29 @@ func (w *Term) Resize(rows, cols int) {
 	pty.Setsize(w.f, w.currentSize())
 
 	w.updateUsed()
+}
+
+func (w *Term) ResizeMoved(rows, cols, rowsOffset, colsOffset int) {
+	// Resize the parser without the lock because that goroutine might
+	// call back into DamageDone and need the lock. If that happens, we'll
+	// get a deadlock from inversion, so instead just perform the parse
+	// stack resize, then take the lock and update the layout data.
+	w.parser.Resize(context.TODO(), rows, cols)
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.cols, w.rows = rows, cols
+	w.coffset = colsOffset
+	w.roffset = rowsOffset
+
+	q.Q(w.id, rows, cols, rowsOffset, colsOffset)
+
+	// pty.Setsize(w.f, w.currentSize())
+
+	w.updateUsed()
+
+	w.applyDamage(state.Rect{Start: state.Pos{0, 0}, End: state.Pos{rows - 1, cols - 1}})
 }
 
 func (w *Term) updateUsed() {
@@ -106,6 +139,10 @@ func (w *Term) Start(rows, cols, roffset, coffset int) (io.Writer, error) {
 	return w.f, w.begin()
 }
 
+func (w *Term) Write(b []byte) (int, error) {
+	return w.f.Write(b)
+}
+
 // Size returns the size of the widget (content size) as width, height
 // in columns.  Layout managers should attempt to ensure that at least
 // this much space is made available to the View for this Term.  Extra
@@ -131,7 +168,13 @@ func (w *Term) begin() error {
 	}
 
 	go func() {
-		err := parser.Drive()
+		// Setting them here prevents the race detector from worrying about
+		// it when we use w.screen via the screen output handler
+		w.screen = screen
+		w.state = st
+		w.parser = parser
+
+		err := parser.Drive(context.TODO())
 		if err != nil {
 			if err != io.EOF {
 				log.Println(err)
@@ -139,9 +182,7 @@ func (w *Term) begin() error {
 		}
 	}()
 
-	w.screen = screen
-
-	go w.draw()
+	// go w.draw()
 
 	return nil
 }
@@ -183,6 +224,9 @@ func (w *Term) smallRect(r state.Rect) bool {
 }
 
 func (w *Term) DamageDone(r state.Rect) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	// w.newDamage <- r
 
 	// return nil
@@ -204,8 +248,13 @@ func (w *Term) DamageDone(r state.Rect) error {
 	return nil
 }
 
+var dam sync.Mutex
+
 func (w *Term) applyDamage(r state.Rect) error {
-	defer w.MoveCursor(w.cursorPos)
+	dam.Lock()
+	defer dam.Unlock()
+
+	defer w.moveCursor(w.cursorPos)
 	defer w.cmdbuf.Flush()
 
 	for row := r.Start.Row; row <= r.End.Row; row++ {
@@ -230,11 +279,15 @@ func (w *Term) applyDamage(r state.Rect) error {
 				}
 			*/
 
-			if val == 0 {
-				val = ' '
+			abRow := row + w.roffset
+			abCol := col + w.coffset
+
+			if abRow == 0 && abCol > 40 && abCol < 46 {
+				s := string(val)
+				q.Q(w.id, val, s, abRow, abCol)
 			}
 
-			w.cmdbuf.SetCell(state.Pos{Row: row + w.roffset, Col: col + w.coffset}, val, cell.Pen())
+			w.cmdbuf.SetCell(state.Pos{Row: abRow, Col: abCol}, val, cell.Pen())
 		}
 
 		w.used[row] = max + 1
@@ -244,6 +297,13 @@ func (w *Term) applyDamage(r state.Rect) error {
 }
 
 func (w *Term) MoveCursor(p state.Pos) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return w.m.moveCursor(p)
+}
+
+func (w *Term) moveCursor(p state.Pos) error {
 	w.cursorPos = p
 	p.Row += w.roffset
 	p.Col += w.coffset

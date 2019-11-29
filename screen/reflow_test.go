@@ -74,7 +74,49 @@ func TestScreenReflow(t *testing.T) {
 		assert.Equal(t, 'b', screen.getCell(1, 0).val)
 		assert.Equal(t, 'c', screen.getCell(3, 10).val)
 		assert.Equal(t, 'd', screen.getCell(4, 0).val)
+	})
 
+	printScr := func(scr *Screen, row, col int, data string) {
+		for _, r := range data {
+			scr.buffer.getCell(row, col).reset(r, nil)
+			col++
+		}
+	}
+
+	readScr := func(scr *Screen, row, col, sz int) string {
+		var s string
+
+		for i := 0; i < sz; i++ {
+			s += string(scr.getCell(row, col+i).val)
+		}
+
+		return s
+	}
+
+	assertScreen := func(t *testing.T, scr *Screen, row, col int, expected string) {
+		assert.Equal(t, expected, readScr(scr, row, col, len(expected)))
+	}
+
+	n.It("resizes a common pane", func(t *testing.T) {
+		var sink sinkOps
+
+		screen, err := NewScreen(25, 80, &sink)
+		require.NoError(t, err)
+
+		printScr(screen, 0, 0, "sh-3.2$ echo 'hello'")
+		printScr(screen, 1, 0, "hello")
+		printScr(screen, 2, 0, "sh-3.2$ ")
+
+		lineInfo := make([]state.LineInfo, 25)
+
+		err = screen.Resize(25, 40, lineInfo)
+		require.NoError(t, err)
+
+		assertScreen(t, screen, 0, 0, "sh-3.2$ echo 'hello'")
+		assertScreen(t, screen, 1, 0, "hello")
+		assertScreen(t, screen, 2, 0, "sh-3.2$ ")
+
+		screen.WriteToFile("common.txt")
 	})
 
 	n.Meow()

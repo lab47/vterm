@@ -2,9 +2,15 @@ package screen
 
 import (
 	"github.com/evanphx/vterm/state"
+	"github.com/y0ssar1an/q"
 )
 
 func (s *Screen) Resize(rows, cols int, lines []state.LineInfo) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	q.Q(rows, cols)
+
 	// buf := NewBuffer(rows, cols)
 
 	if cols > s.cols {

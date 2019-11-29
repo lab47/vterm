@@ -19,7 +19,8 @@ func realMain() {
 
 	defer m.Cleanup()
 
-	cmd := exec.Command("zsh", "-l")
+	cmd := exec.Command("sh")
+	cmd.Env = append(os.Environ(), "PS1=> ")
 
 	err = m.Run(cmd)
 	if err != nil {
@@ -27,7 +28,7 @@ func realMain() {
 	}
 
 	if os.Getenv("PROFILE") != "" {
-		defer profile.Start(profile.ProfilePath(".")).Stop()
+		defer profile.Start(profile.ProfilePath("."), profile.MemProfile, profile.MemProfileRate(1)).Stop()
 	}
 
 	m.InputData(os.Stdin)

@@ -1,9 +1,13 @@
 package screen
 
 import (
+	"bytes"
 	"errors"
+	"os"
+	"sync"
 
 	"github.com/evanphx/vterm/state"
+	"github.com/y0ssar1an/q"
 )
 
 type Updates interface {
@@ -21,6 +25,8 @@ type Screen struct {
 
 	buffers []*Buffer
 	buffer  *Buffer
+
+	mu sync.Mutex
 
 	updates Updates
 }
@@ -40,6 +46,42 @@ func NewScreen(rows, cols int, updates Updates) (*Screen, error) {
 	return screen, nil
 }
 
+func (s *Screen) WriteToFile(path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+
+	var buf bytes.Buffer
+
+	for _, line := range s.buffer.lines {
+		buf.Reset()
+
+		for i, cell := range line.cells {
+			if i >= s.cols {
+				continue
+			}
+
+			if cell.val == 0 || cell.val == ' ' {
+				buf.WriteByte('.')
+			} else {
+				buf.WriteRune(cell.val)
+			}
+		}
+
+		buf.WriteByte('\n')
+
+		buf.WriteTo(f)
+	}
+
+	return nil
+}
+
 func (s *Screen) getCell(row, col int) *ScreenCell {
 	if row < 0 {
 		panic("huh")
@@ -49,6 +91,9 @@ func (s *Screen) getCell(row, col int) *ScreenCell {
 }
 
 func (s *Screen) setCell(row, col int, cell ScreenCell) {
+	if cell.val == 0 {
+		q.Q(row, col)
+	}
 	s.buffer.setCell(row, col, cell)
 }
 
@@ -75,7 +120,11 @@ func (s *Screen) MoveCursor(pos state.Pos) error {
 }
 
 func (s *Screen) SetCell(pos state.Pos, val state.CellRune) error {
+	s.mu.Lock()
+
 	s.setCell(pos.Row, pos.Col, ScreenCell{val: val.Rune, pen: s.pen})
+
+	s.mu.Unlock()
 
 	return s.damagePos(pos)
 
@@ -83,6 +132,9 @@ func (s *Screen) SetCell(pos state.Pos, val state.CellRune) error {
 }
 
 func (s *Screen) AppendCell(pos state.Pos, r rune) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	cell := s.getCell(pos.Row, pos.Col)
 	if cell == nil {
 		return nil
@@ -97,6 +149,13 @@ func (s *Screen) AppendCell(pos state.Pos, r rune) error {
 }
 
 func (s *Screen) ClearRect(r state.Rect) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	q.Q(r)
+
+	panic("clear")
+
 	for row := r.Start.Row; row < s.rows && row <= r.End.Row; row++ {
 		for col := r.Start.Col; col <= r.End.Col; col++ {
 			cell := s.getCell(row, col)
@@ -160,6 +219,11 @@ func (s *Screen) slideRectUp(r state.Rect, dist int) error {
 }
 
 func (s *Screen) ScrollRect(r state.ScrollRect) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	panic("scroll?")
+
 	switch r.Direction {
 	case state.ScrollRight:
 		sr := r.Rect

@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/evanphx/vterm/parser"
+	"github.com/y0ssar1an/q"
 )
 
 type Pos struct {
@@ -111,8 +112,11 @@ type LineInfo struct {
 }
 
 type State struct {
+	Debug bool
+
 	rows, cols int
 	cursor     Pos
+	atPhantom  bool
 	pen        PenState
 	output     Output
 
@@ -186,6 +190,13 @@ func (s *State) HandleEvent(gev parser.Event) error {
 		return s.handleString(ev)
 	case *parser.OSCEvent:
 		return s.handleOSC(ev)
+	case parser.ResizeEvent:
+		err := s.Resize(ev.Rows, ev.Cols)
+		if ev.Confirm != nil {
+			ev.Confirm <- err
+		}
+
+		return err
 	case *parser.EscapeEvent:
 		// eventually
 		return nil
@@ -203,6 +214,27 @@ func (s *State) scrollBounds() (int, int) {
 	return s.scrollregion.top, bottom
 }
 
+func (s *State) lineFeed(p Pos) Pos {
+	switch {
+	case p.Row < 0:
+		p.Row = 0
+	case p.Row >= s.rows:
+		s.output.ScrollRect(ScrollRect{
+			Rect: Rect{
+				Start: Pos{0, 0},
+				End:   Pos{s.rows - 1, s.cols - 1},
+			},
+			Direction: ScrollUp,
+			Distance:  1,
+		})
+		p.Row = s.rows - 1
+	case p.Row < s.rows-1:
+		p.Row++
+	}
+
+	return p
+}
+
 func (s *State) setCursor(p Pos) {
 	if s.modes.origin {
 		switch {
@@ -216,17 +248,8 @@ func (s *State) setCursor(p Pos) {
 		case p.Row < 0:
 			p.Row = 0
 		case p.Row >= s.rows:
-			s.output.ScrollRect(ScrollRect{
-				Rect: Rect{
-					Start: Pos{0, 0},
-					End:   Pos{s.rows - 1, s.cols - 1},
-				},
-				Direction: ScrollUp,
-				Distance:  1,
-			})
 			p.Row = s.rows - 1
 		}
-
 	}
 
 	switch {
@@ -236,30 +259,28 @@ func (s *State) setCursor(p Pos) {
 		p.Col = s.cols - 1
 	}
 
-	if s.cursor != p {
-		s.cursor = p
-		s.output.MoveCursor(p)
-	}
+	s.updateCursor(p, true)
 }
 
-func (s *State) advancePos() (Pos, Pos) {
-	pos := s.cursor
-
-	newCur := s.cursor
-	newCur.Col++
-
-	if newCur.Col >= s.cols {
-		newCur.Row++
-		newCur.Col = 0
-		s.lineInfo[newCur.Row].Continuation = true
+func (s *State) updateCursor(p Pos, cancelPhantom bool) {
+	if s.cursor == p {
+		return
 	}
 
-	return pos, newCur
+	s.cursor = p
+
+	if cancelPhantom {
+		s.atPhantom = false
+	}
+
+	s.output.MoveCursor(p)
 }
 
 func (s *State) writeData(ev *parser.TextEvent) error {
 	defer ev.Recycle()
 	data := ev.Text
+
+	start := s.cursor
 
 	for len(data) > 0 {
 		r, sz := utf8.DecodeRune(data)
@@ -275,16 +296,45 @@ func (s *State) writeData(ev *parser.TextEvent) error {
 			continue
 		}
 
-		pos, update := s.advancePos()
+		pos := s.cursor
+		width := 1 // TODO find the real width and use it.
+
+		if s.atPhantom || pos.Col+width > s.cols {
+			if s.Debug {
+				q.Q(s.atPhantom, pos.Col, width, s.cols)
+			}
+
+			pos = s.lineFeed(pos)
+			pos.Col = 0
+			s.atPhantom = false
+			if pos.Row < len(s.lineInfo) {
+				s.lineInfo[pos.Row].Continuation = true
+			}
+		}
 
 		s.lastPos = pos
+
+		if s.Debug {
+			if pos.Row == 0 && pos.Col == 43 {
+				s := string(r)
+				q.Q(start, pos, s)
+			}
+		}
 
 		err := s.output.SetCell(pos, CellRune{r, 1})
 		if err != nil {
 			return err
 		}
 
-		s.setCursor(update)
+		if pos.Col+width >= s.cols {
+			if s.modes.autowrap {
+				s.atPhantom = true
+			}
+		} else {
+			pos.Col += width
+		}
+
+		s.updateCursor(pos, false)
 	}
 
 	return nil
@@ -310,11 +360,14 @@ func (s *State) handleControl(control byte) error {
 		}
 	case '\r':
 		pos.Col = 0
-	case '\n':
-		pos.Row++
+	case '\n', 0xb, 0xc:
+		pos = s.lineFeed(pos)
+		if s.modes.newline {
+			pos.Col = 0
+		}
 	}
 
-	s.setCursor(pos)
+	s.updateCursor(pos, true)
 	return nil
 }
 
@@ -891,7 +944,7 @@ func (s *State) setDecMode(ev *parser.CSIEvent) error {
 		return s.output.SetTermProp(TermAttrReverse, true)
 	case 6:
 		s.modes.origin = true
-		s.cursor = Pos{0, 0}
+		s.updateCursor(Pos{0, 0}, true)
 	case 7:
 		s.modes.autowrap = true
 	case 12:
@@ -984,9 +1037,9 @@ func (s *State) removeDecMode(ev *parser.CSIEvent) error {
 	case 1047:
 		return s.output.SetTermProp(TermAttrAltScreen, false)
 	case 1048:
-		s.cursor = s.savedCursor
+		s.updateCursor(s.savedCursor, true)
 	case 1049:
-		s.cursor = s.savedCursor
+		s.updateCursor(s.savedCursor, true)
 		return s.output.SetTermProp(TermAttrAltScreen, false)
 	case 2004:
 		s.modes.bracketpaste = false

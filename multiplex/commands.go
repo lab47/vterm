@@ -47,6 +47,7 @@ func (cb *CommandBuffer) samePen(pen *screen.ScreenPen) bool {
 
 func (cb *CommandBuffer) SetCell(p state.Pos, val rune, pen *screen.ScreenPen) error {
 	if !cb.setPos || cb.cursor != p {
+		// q.Q(p)
 		cb.m.ti.TParmf(cb.buf, cb.m.ti.SetCursor, p.Row, p.Col)
 		// cb.m.ti.TPuts(&cb.buf, cb.m.ti.TGoto(p.Col, p.Row))
 		cb.cursor = p
@@ -76,6 +77,9 @@ func (cb *CommandBuffer) SetCell(p state.Pos, val rune, pen *screen.ScreenPen) e
 }
 
 func (cb *CommandBuffer) Flush() error {
+	cb.m.outMu.Lock()
+	defer cb.m.outMu.Unlock()
+
 	_, err := io.Copy(cb.m.out, cb.buf)
 	if err != nil {
 		return err

@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -32,7 +33,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(strings.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 1, len(c.Events))
@@ -52,7 +53,7 @@ func TestParser(t *testing.T) {
 			pr, err := NewParser(bytes.NewReader([]byte{i}), &c)
 			require.NoError(t, err)
 
-			err = pr.Drive()
+			err = pr.Drive(context.TODO())
 			require.Error(t, err, io.EOF)
 
 			require.Equal(t, 1, len(c.Events))
@@ -82,7 +83,7 @@ func TestParser(t *testing.T) {
 			pr, err := NewParser(bytes.NewReader(b), &c)
 			require.NoError(t, err)
 
-			err = pr.Drive()
+			err = pr.Drive(context.TODO())
 			require.Error(t, err, io.EOF)
 
 			require.Equal(t, 1, len(c.Events))
@@ -103,7 +104,7 @@ func TestParser(t *testing.T) {
 			pr, err := NewParser(bytes.NewReader(b), &c)
 			require.NoError(t, err)
 
-			err = pr.Drive()
+			err = pr.Drive(context.TODO())
 			require.Error(t, err, io.EOF)
 
 			require.Equal(t, 1, len(c.Events))
@@ -122,7 +123,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 3, len(c.Events))
@@ -152,7 +153,7 @@ func TestParser(t *testing.T) {
 			pr, err := NewParser(bytes.NewReader(i), &c)
 			require.NoError(t, err)
 
-			err = pr.Drive()
+			err = pr.Drive(context.TODO())
 			require.Error(t, err, io.EOF)
 
 			require.Equal(t, 1, len(c.Events))
@@ -172,7 +173,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(i), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 1, len(c.Events))
@@ -191,7 +192,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(i), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 1, len(c.Events))
@@ -209,7 +210,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 2, len(c.Events))
@@ -297,7 +298,7 @@ func TestParser(t *testing.T) {
 			pr, err := NewParser(strings.NewReader(test.input), &c)
 			require.NoError(t, err)
 
-			err = pr.Drive()
+			err = pr.Drive(context.TODO())
 			require.Error(t, err, io.EOF)
 
 			require.Equal(t, 1, len(c.Events))
@@ -317,7 +318,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 3, len(c.Events))
@@ -346,7 +347,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 1, len(c.Events))
@@ -364,7 +365,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 1, len(c.Events))
@@ -382,7 +383,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 2, len(c.Events))
@@ -417,7 +418,7 @@ func TestParser(t *testing.T) {
 			pr, err := NewParser(strings.NewReader(test.input), &c)
 			require.NoError(t, err)
 
-			err = pr.Drive()
+			err = pr.Drive(context.TODO())
 			require.Error(t, err, io.EOF)
 
 			require.Equal(t, 1, len(c.Events))
@@ -436,7 +437,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 1, len(c.Events))
@@ -454,7 +455,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 1, len(c.Events))
@@ -472,7 +473,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 2, len(c.Events))
@@ -507,7 +508,7 @@ func TestParser(t *testing.T) {
 			pr, err := NewParser(strings.NewReader(test.input), &c)
 			require.NoError(t, err)
 
-			err = pr.Drive()
+			err = pr.Drive(context.TODO())
 			require.Error(t, err, io.EOF)
 
 			require.Equal(t, 1, len(c.Events))
@@ -526,7 +527,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 1, len(c.Events))
@@ -544,7 +545,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 1, len(c.Events))
@@ -562,7 +563,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(bytes.NewReader(input), &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 2, len(c.Events))
@@ -596,7 +597,7 @@ func TestParser(t *testing.T) {
 			pr, err := NewParser(strings.NewReader(test.input), &c)
 			require.NoError(t, err)
 
-			err = pr.Drive()
+			err = pr.Drive(context.TODO())
 			require.Error(t, err, io.EOF)
 
 			require.Equal(t, 1, len(c.Events))
@@ -613,7 +614,7 @@ func TestParser(t *testing.T) {
 		pr, err := NewParser(input, &c)
 		require.NoError(t, err)
 
-		err = pr.Drive()
+		err = pr.Drive(context.TODO())
 		require.Error(t, err, io.EOF)
 
 		require.Equal(t, 1, len(c.Events))

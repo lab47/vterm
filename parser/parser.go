@@ -3,6 +3,7 @@ package parser
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"strconv"
@@ -18,20 +19,51 @@ type Parser struct {
 	br      *bufio.Reader
 	plain   bytes.Buffer
 	handler EventHandler
+
+	r        io.Reader
+	newData  chan []byte
+	injected chan Event
+
+	curData []byte
+	pos     int
 }
 
 func NewParser(r io.Reader, h EventHandler) (*Parser, error) {
-	br := bufio.NewReader(r)
+	// br := bufio.NewReader(r)
 
 	parser := &Parser{
-		br:      br,
-		handler: h,
+		r: r,
+		// br:      br,
+		handler:  h,
+		newData:  make(chan []byte, 3),
+		injected: make(chan Event),
 	}
 
 	return parser, nil
 }
 
 type Event interface{}
+
+type ResizeEvent struct {
+	Rows, Cols int
+	Confirm    chan error
+}
+
+func (p *Parser) Resize(ctx context.Context, rows, cols int) error {
+	c := make(chan error)
+	p.injected <- ResizeEvent{
+		Rows:    rows,
+		Cols:    cols,
+		Confirm: c,
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-c:
+		return err
+	}
+}
 
 const (
 	NUL = 0x0
@@ -43,9 +75,11 @@ const (
 	C0  = 0x20
 )
 
-func (p *Parser) Drive() error {
+func (p *Parser) Drive(ctx context.Context) error {
+	go p.readInput(ctx)
+
 	for {
-		b, err := p.br.ReadByte()
+		b, err := p.readByte(ctx)
 		if err != nil {
 			return err
 		}
@@ -56,7 +90,7 @@ func (p *Parser) Drive() error {
 		case CAN, SUB:
 			continue
 		case ESC:
-			err := p.readEsc()
+			err := p.readEsc(ctx)
 			if err != nil {
 				return err
 			}
@@ -72,14 +106,14 @@ func (p *Parser) Drive() error {
 			}
 		}
 
-		err = p.br.UnreadByte()
+		err = p.unreadByte()
 		if err != nil {
 			return err
 		}
 
 	normal:
 		for {
-			b, err := p.br.ReadByte()
+			b, err := p.readByte(ctx)
 			if err != nil {
 				if p.plain.Len() > 0 {
 					p.readSpan()
@@ -92,7 +126,7 @@ func (p *Parser) Drive() error {
 			case NUL, DEL, CAN, SUB:
 				continue normal
 			case ESC:
-				err = p.br.UnreadByte()
+				err = p.unreadByte()
 				if err != nil {
 					return err
 				}
@@ -105,7 +139,7 @@ func (p *Parser) Drive() error {
 				break normal
 			default:
 				if b < C0 {
-					err = p.br.UnreadByte()
+					err = p.unreadByte()
 					if err != nil {
 						return err
 					}
@@ -119,12 +153,12 @@ func (p *Parser) Drive() error {
 				}
 			}
 
-			err = p.br.UnreadByte()
+			err = p.unreadByte()
 			if err != nil {
 				return err
 			}
 
-			r, _, err := p.br.ReadRune()
+			r, _, err := p.readRune(ctx)
 			if err != nil {
 				return err
 			}
@@ -136,7 +170,7 @@ func (p *Parser) Drive() error {
 
 			// optimization because it's really common to get here and have just one single character
 			// in the buffer we need to emit immediately.
-			if p.plain.Len() > 0 && p.br.Buffered() == 0 {
+			if p.plain.Len() > 0 && p.buffered() == 0 {
 				p.readSpan()
 			}
 		}
@@ -200,11 +234,11 @@ type EscapeEvent struct {
 	Data []byte
 }
 
-func (p *Parser) readEsc() error {
+func (p *Parser) readEsc(ctx context.Context) error {
 	var intermed []byte
 top:
 	for {
-		b, err := p.br.ReadByte()
+		b, err := p.readByte(ctx)
 		if err != nil {
 			return err
 		}
@@ -226,11 +260,11 @@ top:
 
 		switch b {
 		case 0x50: // DCS
-			return p.readString("DCS")
+			return p.readString(ctx, "DCS")
 		case 0x5b: // CSI
-			return p.readCSI()
+			return p.readCSI(ctx)
 		case 0x5d: // OSC
-			return p.readString("OSC")
+			return p.readString(ctx, "OSC")
 		default:
 			if isIntermed(b) {
 				intermed = append(intermed, b)
@@ -275,12 +309,12 @@ func (p *Parser) emitStringEvent(kind string, data []byte) error {
 	})
 }
 
-func (p *Parser) readString(kind string) error {
+func (p *Parser) readString(ctx context.Context, kind string) error {
 	var data []byte
 
 top:
 	for {
-		b, err := p.br.ReadByte()
+		b, err := p.readByte(ctx)
 		if err != nil {
 			return err
 		}
@@ -291,7 +325,7 @@ top:
 		case CAN, SUB:
 			return nil
 		case ESC:
-			b, err := p.br.ReadByte()
+			b, err := p.readByte(ctx)
 			if err != nil {
 				return err
 			}
@@ -300,12 +334,12 @@ top:
 				return p.emitStringEvent(kind, data)
 			}
 
-			err = p.br.UnreadByte()
+			err = p.unreadByte()
 			if err != nil {
 				return err
 			}
 
-			return p.readEsc()
+			return p.readEsc(ctx)
 		default:
 			switch {
 			case b == 0x7:
@@ -362,7 +396,7 @@ func (c *CSIEvent) String() string {
 	return fmt.Sprintf("CSI: %s (0x%x) Leader=%#v Args=%#v Intermed=%#v", cmd.String(), c.Command, c.Leader, c.Args, c.Intermed)
 }
 
-func (p *Parser) readCSI() error {
+func (p *Parser) readCSI(ctx context.Context) error {
 	const (
 		LEADER   = 1
 		ARG      = 2
@@ -381,7 +415,7 @@ func (p *Parser) readCSI() error {
 
 top:
 	for {
-		b, err := p.br.ReadByte()
+		b, err := p.readByte(ctx)
 		if err != nil {
 			ev.Command = b
 			ev.Leader = leader
@@ -398,7 +432,7 @@ top:
 		case CAN, SUB:
 			return nil
 		case ESC:
-			return p.readEsc()
+			return p.readEsc(ctx)
 		default:
 			if b < C0 {
 				p.readControl(b)

@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -20,17 +21,22 @@ import (
 const mouseMode = "%?%p1%{1}%=%t%'h'%Pa%e%'l'%Pa%;\x1b[?1000%ga%c\x1b[?1002%ga%c\x1b[?1006%ga%c"
 
 type Multiplexer struct {
+	Config Config
+
 	ti *terminfo.Terminfo
 	st *terminal.State
 
 	rows, cols int
 
-	in, out *os.File
+	outMu sync.Mutex
+
+	out io.Writer
+
+	resetFd int
 
 	buf []byte
 
-	focusTerm  *Term
-	focusInput io.Writer
+	layout *Layout
 
 	curPos state.Pos
 
@@ -38,8 +44,17 @@ type Multiplexer struct {
 }
 
 func (m *Multiplexer) Init() error {
-	m.in = os.Stdin
-	m.out = os.Stdout
+	var (
+		in  = os.Stdin
+		out = os.Stdout
+	)
+
+	if len(m.Config.Shell) == 0 {
+		m.Config.Shell = []string{os.Getenv("SHELL")}
+	}
+
+	m.out = out
+	m.resetFd = int(in.Fd())
 
 	ti, err := terminfo.LookupTerminfo(os.Getenv("TERM"))
 	if err != nil {
@@ -62,7 +77,7 @@ func (m *Multiplexer) Init() error {
 
 	m.buf = make([]byte, 32)
 
-	st, err := terminal.MakeRaw(int(m.in.Fd()))
+	st, err := terminal.MakeRaw(m.resetFd)
 	if err != nil {
 		return err
 	}
@@ -71,13 +86,21 @@ func (m *Multiplexer) Init() error {
 
 	m.ti.TPuts(m.out, m.ti.EnterCA)
 	m.ti.TPuts(m.out, m.ti.EnableAcs)
-	m.ti.TPuts(m.out, m.ti.Clear)
+	// m.ti.TPuts(m.out, m.ti.Clear)
 	m.ti.TPuts(m.out, m.ti.TParm(mouseMode, 1))
 
-	m.DrawHorizLine(state.Pos{Row: 1, Col: 0}, cols)
-	m.DrawVerticalLine(state.Pos{Row: 0, Col: 2}, rows)
+	// m.DrawHorizLine(state.Pos{Row: 1, Col: 0}, cols)
+	// m.DrawVerticalLine(state.Pos{Row: 0, Col: 2}, rows)
 
 	return nil
+}
+
+func (m *Multiplexer) RunShell() error {
+	shell := m.Config.Shell
+	cmd := exec.Command(shell[0], shell[1:]...)
+	cmd.Env = append(os.Environ(), m.Config.Env...)
+
+	return m.Run(cmd)
 }
 
 func (m *Multiplexer) Run(cmd *exec.Cmd) error {
@@ -86,15 +109,20 @@ func (m *Multiplexer) Run(cmd *exec.Cmd) error {
 		return err
 	}
 
-	w, err := term.Start(m.rows-2, m.cols-3, 2, 3)
+	layout, err := NewLayout(m, term, m.rows, m.cols)
 	if err != nil {
 		return err
 	}
 
-	m.focusTerm = term
-	m.focusInput = w
+	m.layout = layout
 
-	return nil
+	return m.layout.Start()
+}
+
+func (m *Multiplexer) Redraw() error {
+	// m.ti.TPuts(m.out, m.ti.Clear)
+
+	return m.layout.Draw(m.out)
 }
 
 func (m *Multiplexer) setCell(p state.Pos, val rune, pen *screen.ScreenPen) error {
@@ -124,6 +152,9 @@ func (m *Multiplexer) setCell(p state.Pos, val rune, pen *screen.ScreenPen) erro
 }
 
 func (m *Multiplexer) moveCursor(p state.Pos) error {
+	m.outMu.Lock()
+	defer m.outMu.Unlock()
+
 	if m.curPos != p {
 		m.ti.TParmf(m.out, m.ti.SetCursor, p.Row, p.Col)
 		// m.ti.TPuts(m.out, m.ti.TGoto(p.Col, p.Row))
@@ -136,10 +167,12 @@ func (m *Multiplexer) moveCursor(p state.Pos) error {
 func (m *Multiplexer) Cleanup() {
 	m.ti.TPuts(m.out, m.ti.TParm(mouseMode, 0))
 	m.ti.TPuts(m.out, m.ti.AttrOff)
-	m.ti.TPuts(m.out, m.ti.Clear)
+	// m.ti.TPuts(m.out, m.ti.Clear)
 	m.ti.TPuts(m.out, m.ti.ExitCA)
 
-	terminal.Restore(int(m.in.Fd()), m.st)
+	if m.resetFd != -1 {
+		terminal.Restore(m.resetFd, m.st)
+	}
 }
 
 func (m *Multiplexer) HandleInput(ev Event) error {
@@ -147,9 +180,16 @@ func (m *Multiplexer) HandleInput(ev Event) error {
 
 	switch ev := ev.(type) {
 	case TextEvent:
-		_, err = m.focusInput.Write([]byte(ev))
+		_, err = m.layout.Write([]byte(ev))
 	case ControlEvent:
-		_, err = m.focusInput.Write([]byte{byte(ev)})
+		q.Q(ev)
+
+		if ev == 0x1 {
+			m.layout.Operations.Split()
+		} else {
+			_, err = m.layout.Write([]byte{byte(ev)})
+		}
+
 	default:
 		err = nil
 	}

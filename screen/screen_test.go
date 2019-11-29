@@ -110,8 +110,8 @@ func TestScreen(t *testing.T) {
 			End:   state.Pos{Row: 3, Col: 1},
 		}
 
-		screen.buffer.setCell(1, 1, 'a')
-		screen.buffer.setCell(2, 1, 'b')
+		screen.buffer.setCell(1, 1, ScreenCell{val: 'a'})
+		screen.buffer.setCell(2, 1, ScreenCell{val: 'b'})
 
 		sr := state.ScrollRect{
 			Rect:      rect,
