@@ -1,16 +1,17 @@
 package multiplex
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/evanphx/vterm/parser"
 	"github.com/evanphx/vterm/pkg/terminfo"
 	"github.com/evanphx/vterm/screen"
 	"github.com/evanphx/vterm/state"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vektra/neko"
 	"github.com/y0ssar1an/q"
@@ -23,6 +24,8 @@ type integrationOutput struct {
 }
 
 func (i *integrationOutput) DamageDone(r state.Rect) error {
+	return nil
+
 	for row := r.Start.Row; row <= r.End.Row; row++ {
 		for col := r.Start.Col; col <= r.End.Col; col++ {
 			cell, err := i.screen.GetCell(row, col)
@@ -91,6 +94,31 @@ func TestIntegration(t *testing.T) {
 		cols = 80
 	)
 
+	getRange := func(s *screen.Screen, row, col, sz int) (string, error) {
+		var ret string
+
+		for i := 0; i < sz; i++ {
+			cell, err := s.GetCell(row, col+i)
+			if err != nil {
+				return "", err
+			}
+
+			val, _ := cell.Value()
+
+			ret += string(val)
+		}
+
+		return ret, nil
+	}
+
+	assertRange := func(t *testing.T, s *screen.Screen, row int, col int, expected string) {
+		l := utf8.RuneCountInString(expected)
+		val, err := getRange(s, row, col, l)
+		require.NoError(t, err)
+
+		assert.Equal(t, expected, val)
+	}
+
 	n.It("can setup a split", func(t *testing.T) {
 		var i integrationOutput
 		scr, err := screen.NewScreen(rows, cols, &i)
@@ -101,7 +129,7 @@ func TestIntegration(t *testing.T) {
 		st, err := state.NewState(rows, cols, scr)
 		require.NoError(t, err)
 
-		st.Debug = true
+		// st.Debug = true
 
 		r, w := io.Pipe()
 
@@ -119,55 +147,39 @@ func TestIntegration(t *testing.T) {
 
 		m.Config.Shell = []string{"sh"}
 
-		q.Q("start")
-
 		err = m.RunShell()
 		require.NoError(t, err)
 
-		time.Sleep(time.Second)
+		// This is to simulate what happens in the real world,
+		// where the command is sent by the human after the shell
+		// has changed the echo tcattrs. If we don't do this, the
+		// text will be seen echod back by the tty because it will
+		// be processed before the shell has disabled automatic-echo.
+		time.Sleep(50 * time.Millisecond)
 
 		m.HandleInput(TextEvent("echo 'hello'"))
 		m.HandleInput(ControlEvent('\n'))
 
-		time.Sleep(time.Second)
-
-		q.Q("split")
-
 		m.HandleInput(ControlEvent(0x1))
 
-		/*
-			time.Sleep(10 * time.Second)
+		time.Sleep(50 * time.Millisecond)
 
-			m.HandleInput(TextEvent("echo 'col2'"))
-			m.HandleInput(ControlEvent('\n'))
+		m.HandleInput(TextEvent("echo 'col2'"))
+		m.HandleInput(ControlEvent('\n'))
 
-			time.Sleep(5 * time.Second)
+		time.Sleep(time.Second)
 
-		*/
+		assertRange(t, scr, 0, 0, "sh-3.2$ echo 'hello'")
+		assertRange(t, scr, 1, 0, "hello")
+		assertRange(t, scr, 2, 0, "sh-3.2$")
 
-		var buf bytes.Buffer
+		assertRange(t, scr, 0, 40, "│")
+		assertRange(t, scr, 1, 40, "│")
+		assertRange(t, scr, 2, 40, "│")
 
-		for i := 0; i < 8; i++ {
-			cell, err := scr.GetCell(1, i)
-			require.NoError(t, err)
-
-			r, _ := cell.Value()
-			buf.WriteRune(r)
-		}
-
-		t.Logf("output: %s", buf.String())
-
-		buf.Reset()
-
-		for i := 40; i < 48; i++ {
-			cell, err := scr.GetCell(1, i)
-			require.NoError(t, err)
-
-			r, _ := cell.Value()
-			buf.WriteRune(r)
-		}
-
-		t.Logf("output2: %s", buf.String())
+		assertRange(t, scr, 0, 41, "sh-3.2$ echo 'col2'")
+		assertRange(t, scr, 1, 41, "col2")
+		assertRange(t, scr, 2, 41, "sh-3.2$")
 
 		scr.WriteToFile("snap.txt")
 	})

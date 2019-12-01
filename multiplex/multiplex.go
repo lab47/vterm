@@ -182,8 +182,6 @@ func (m *Multiplexer) HandleInput(ev Event) error {
 	case TextEvent:
 		_, err = m.layout.Write([]byte(ev))
 	case ControlEvent:
-		q.Q(ev)
-
 		if ev == 0x1 {
 			m.layout.Operations.Split()
 		} else {

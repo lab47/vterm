@@ -5,8 +5,6 @@ import (
 	"io"
 	"time"
 	"unicode/utf8"
-
-	"github.com/y0ssar1an/q"
 )
 
 func (p *Parser) readInput(ctx context.Context) {
@@ -15,6 +13,7 @@ func (p *Parser) readInput(ctx context.Context) {
 		n, err := p.r.Read(buf)
 		if err != nil {
 			close(p.newData)
+			panic(err)
 			return
 		}
 
@@ -53,7 +52,6 @@ func (p *Parser) peekByte(ctx context.Context) (byte, error) {
 		case <-ctx.Done():
 			return 0, ctx.Err()
 		case ev := <-p.injected:
-			q.Q("injected", ev)
 			err := p.handler.HandleEvent(ev)
 			if err != nil {
 				return 0, err
@@ -123,7 +121,6 @@ func (p *Parser) readRune(ctx context.Context) (r rune, size int, err error) {
 
 			p.curData = append(p.curData, data...)
 		case ev := <-p.injected:
-			q.Q("injected", ev)
 			err = p.handler.HandleEvent(ev)
 			if err != nil {
 				return 0, 0, err

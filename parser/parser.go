@@ -170,7 +170,7 @@ func (p *Parser) Drive(ctx context.Context) error {
 
 			// optimization because it's really common to get here and have just one single character
 			// in the buffer we need to emit immediately.
-			if p.plain.Len() > 0 && p.buffered() == 0 {
+			if p.buffered() == 0 {
 				p.readSpan()
 			}
 		}
@@ -196,6 +196,10 @@ func (ev *TextEvent) Recycle() {
 }
 
 func (p *Parser) readSpan() error {
+	if p.plain.Len() == 0 {
+		return nil
+	}
+
 	ev := textPool.Get().(*TextEvent)
 
 	var buf []byte

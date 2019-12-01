@@ -6,7 +6,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/evanphx/vterm/parser"
-	"github.com/y0ssar1an/q"
 )
 
 type Pos struct {
@@ -68,9 +67,16 @@ type CellRune struct {
 	Width int
 }
 
+type ModifyTx interface {
+	SetCell(pos Pos, val CellRune) error
+	AppendCell(pos Pos, val rune) error
+	Close() error
+}
+
 type Output interface {
 	MoveCursor(pos Pos) error
 	SetCell(pos Pos, val CellRune) error
+	BeginTx() ModifyTx
 	AppendCell(pos Pos, r rune) error
 	ClearRect(r Rect) error
 	ScrollRect(s ScrollRect) error
@@ -113,6 +119,7 @@ type LineInfo struct {
 
 type State struct {
 	Debug bool
+	Id    string
 
 	rows, cols int
 	cursor     Pos
@@ -280,7 +287,7 @@ func (s *State) writeData(ev *parser.TextEvent) error {
 	defer ev.Recycle()
 	data := ev.Text
 
-	start := s.cursor
+	tx := s.output.BeginTx()
 
 	for len(data) > 0 {
 		r, sz := utf8.DecodeRune(data)
@@ -288,7 +295,7 @@ func (s *State) writeData(ev *parser.TextEvent) error {
 		data = data[sz:]
 
 		if unicode.In(r, unicode.Diacritic) {
-			err := s.output.AppendCell(s.lastPos, r)
+			err := tx.AppendCell(s.lastPos, r)
 			if err != nil {
 				return err
 			}
@@ -300,10 +307,6 @@ func (s *State) writeData(ev *parser.TextEvent) error {
 		width := 1 // TODO find the real width and use it.
 
 		if s.atPhantom || pos.Col+width > s.cols {
-			if s.Debug {
-				q.Q(s.atPhantom, pos.Col, width, s.cols)
-			}
-
 			pos = s.lineFeed(pos)
 			pos.Col = 0
 			s.atPhantom = false
@@ -314,14 +317,7 @@ func (s *State) writeData(ev *parser.TextEvent) error {
 
 		s.lastPos = pos
 
-		if s.Debug {
-			if pos.Row == 0 && pos.Col == 43 {
-				s := string(r)
-				q.Q(start, pos, s)
-			}
-		}
-
-		err := s.output.SetCell(pos, CellRune{r, 1})
+		err := tx.SetCell(pos, CellRune{r, 1})
 		if err != nil {
 			return err
 		}
@@ -334,10 +330,12 @@ func (s *State) writeData(ev *parser.TextEvent) error {
 			pos.Col += width
 		}
 
-		s.updateCursor(pos, false)
+		s.cursor = pos
 	}
 
-	return nil
+	tx.Close()
+
+	return s.output.MoveCursor(s.cursor)
 }
 
 func (s *State) handleControl(control byte) error {

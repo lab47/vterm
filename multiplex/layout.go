@@ -3,7 +3,7 @@ package multiplex
 import (
 	"io"
 
-	"github.com/y0ssar1an/q"
+	"github.com/evanphx/vterm/state"
 )
 
 type LayoutColumn struct {
@@ -79,11 +79,7 @@ func (l *Layout) Draw(w io.Writer) error {
 	r1 := c1.Data[0]
 	r2 := c2.Data[0]
 
-	if r1 != nil && r2 != nil {
-		q.Q("setup")
-	} else {
-		q.Q("error")
-	}
+	l.m.DrawVerticalLine(state.Pos{Row: 0, Col: r2.Column - 1}, l.Rows)
 
 	r1.Term.ResizeMoved(r1.Height, c1.Width, c1.Row, r1.Column)
 	r2.Term.ResizeMoved(r2.Height, c2.Width, c2.Row, r2.Column)

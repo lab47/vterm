@@ -34,8 +34,10 @@ func (o *Operations) Split() error {
 		return err
 	}
 
+	rightWidth := width - 1
+
 	row2 := &LayoutRow{
-		Column: width,
+		Column: width + 1,
 		Height: cl.Height,
 		Term:   term,
 	}
@@ -47,7 +49,7 @@ func (o *Operations) Split() error {
 	col1.Data = append(col1.Data, row1)
 
 	col2 := &LayoutColumn{
-		Width: width,
+		Width: rightWidth,
 	}
 
 	col2.Data = append(col2.Data, row2)
@@ -55,7 +57,7 @@ func (o *Operations) Split() error {
 	cl.Data = append(cl.Data, col1, col2)
 	cl.Term = nil
 
-	w, err := term.Start(o.l.Rows, width, 0, width)
+	w, err := term.Start(o.l.Rows, width, 0, rightWidth)
 	if err != nil {
 		return err
 	}

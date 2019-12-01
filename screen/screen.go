@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/evanphx/vterm/state"
-	"github.com/y0ssar1an/q"
 )
 
 type Updates interface {
@@ -83,23 +82,38 @@ func (s *Screen) WriteToFile(path string) error {
 }
 
 func (s *Screen) getCell(row, col int) *ScreenCell {
-	if row < 0 {
-		panic("huh")
-	}
-
 	return s.buffer.getCell(row, col)
 }
 
 func (s *Screen) setCell(row, col int, cell ScreenCell) {
-	if cell.val == 0 {
-		q.Q(row, col)
-	}
 	s.buffer.setCell(row, col, cell)
+}
+
+func (s *Screen) RowString(row int) string {
+	var buf bytes.Buffer
+
+	line := s.buffer.lines[row]
+	for i, cell := range line.cells {
+		if i >= s.cols {
+			continue
+		}
+
+		if cell.val == 0 || cell.val == ' ' {
+			buf.WriteByte('.')
+		} else {
+			buf.WriteRune(cell.val)
+		}
+	}
+
+	return buf.String()
 }
 
 var ErrOutOfBounds = errors.New("position of out bounds")
 
 func (s *Screen) GetCell(row, col int) (*ScreenCell, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if row < 0 || row >= s.rows || col < 0 || col >= s.cols {
 		return nil, ErrOutOfBounds
 	}
@@ -151,10 +165,6 @@ func (s *Screen) AppendCell(pos state.Pos, r rune) error {
 func (s *Screen) ClearRect(r state.Rect) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	q.Q(r)
-
-	panic("clear")
 
 	for row := r.Start.Row; row < s.rows && row <= r.End.Row; row++ {
 		for col := r.Start.Col; col <= r.End.Col; col++ {
@@ -221,8 +231,6 @@ func (s *Screen) slideRectUp(r state.Rect, dist int) error {
 func (s *Screen) ScrollRect(r state.ScrollRect) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	panic("scroll?")
 
 	switch r.Direction {
 	case state.ScrollRight:

@@ -2,6 +2,7 @@ package multiplex
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -79,11 +80,15 @@ func (w *Term) Resize(rows, cols int) {
 }
 
 func (w *Term) ResizeMoved(rows, cols, rowsOffset, colsOffset int) {
-	// Resize the parser without the lock because that goroutine might
-	// call back into DamageDone and need the lock. If that happens, we'll
-	// get a deadlock from inversion, so instead just perform the parse
-	// stack resize, then take the lock and update the layout data.
-	w.parser.Resize(context.TODO(), rows, cols)
+	resize := w.cols != cols || w.rows != rows
+
+	if resize {
+		// Resize the parser without the lock because that goroutine might
+		// call back into DamageDone and need the lock. If that happens, we'll
+		// get a deadlock from inversion, so instead just perform the parse
+		// stack resize, then take the lock and update the layout data.
+		w.parser.Resize(context.TODO(), rows, cols)
+	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -92,13 +97,13 @@ func (w *Term) ResizeMoved(rows, cols, rowsOffset, colsOffset int) {
 	w.coffset = colsOffset
 	w.roffset = rowsOffset
 
-	q.Q(w.id, rows, cols, rowsOffset, colsOffset)
+	if resize {
+		pty.Setsize(w.f, w.currentSize())
 
-	// pty.Setsize(w.f, w.currentSize())
+		w.updateUsed()
 
-	w.updateUsed()
-
-	w.applyDamage(state.Rect{Start: state.Pos{0, 0}, End: state.Pos{rows - 1, cols - 1}})
+		w.applyDamage(state.Rect{Start: state.Pos{0, 0}, End: state.Pos{rows - 1, cols - 1}})
+	}
 }
 
 func (w *Term) updateUsed() {
@@ -119,6 +124,16 @@ func (w *Term) currentSize() *pty.Winsize {
 	ws.Rows = uint16(w.rows)
 
 	return &ws
+}
+
+type writeDebug struct {
+	w io.Writer
+}
+
+func (w *writeDebug) Write(b []byte) (int, error) {
+	q.Q(string(b))
+
+	return w.w.Write(b)
 }
 
 func (w *Term) Start(rows, cols, roffset, coffset int) (io.Writer, error) {
@@ -162,6 +177,9 @@ func (w *Term) begin() error {
 		return err
 	}
 
+	st.Debug = true
+	st.Id = fmt.Sprintf("sub%d", w.id)
+
 	parser, err := parser.NewParser(w.f, st)
 	if err != nil {
 		return err
@@ -198,7 +216,6 @@ func (w *Term) draw() {
 		case r := <-w.newDamage:
 			if len(damage) == 0 && w.smallRect(r) {
 				if !w.m.inputData.IsZero() {
-					q.Q(time.Since(w.m.inputData).String())
 					w.m.inputData = time.Time{}
 				}
 				w.applyDamage(r)
@@ -251,10 +268,16 @@ func (w *Term) DamageDone(r state.Rect) error {
 var dam sync.Mutex
 
 func (w *Term) applyDamage(r state.Rect) error {
-	dam.Lock()
-	defer dam.Unlock()
+	// dam.Lock()
+	// defer dam.Unlock()
 
-	defer w.moveCursor(w.cursorPos)
+	out := r
+	out.Start.Row += w.roffset
+	out.End.Row += w.roffset
+	out.Start.Col += w.coffset
+	out.End.Col += w.coffset
+
+	// defer w.moveCursor(w.cursorPos)
 	defer w.cmdbuf.Flush()
 
 	for row := r.Start.Row; row <= r.End.Row; row++ {
@@ -282,10 +305,12 @@ func (w *Term) applyDamage(r state.Rect) error {
 			abRow := row + w.roffset
 			abCol := col + w.coffset
 
-			if abRow == 0 && abCol > 40 && abCol < 46 {
-				s := string(val)
-				q.Q(w.id, val, s, abRow, abCol)
-			}
+			/*
+				if abRow == 0 && abCol > 40 && abCol < 46 {
+					s := string(val)
+					q.Q(w.id, val, s, abRow, abCol)
+				}
+			*/
 
 			w.cmdbuf.SetCell(state.Pos{Row: abRow, Col: abCol}, val, cell.Pen())
 		}
