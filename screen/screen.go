@@ -9,8 +9,12 @@ import (
 	"github.com/evanphx/vterm/state"
 )
 
+type CellReader interface {
+	GetCell(row, col int) *ScreenCell
+}
+
 type Updates interface {
-	DamageDone(r state.Rect) error
+	DamageDone(r state.Rect, cr CellReader) error
 	MoveCursor(p state.Pos) error
 	SetTermProp(attr state.TermAttr, val interface{}) error
 	Output(data []byte) error
@@ -81,6 +85,14 @@ func (s *Screen) WriteToFile(path string) error {
 	return nil
 }
 
+type cellReader struct {
+	s *Screen
+}
+
+func (cr cellReader) GetCell(row, col int) *ScreenCell {
+	return cr.s.buffer.getCell(row, col)
+}
+
 func (s *Screen) getCell(row, col int) *ScreenCell {
 	return s.buffer.getCell(row, col)
 }
@@ -110,15 +122,15 @@ func (s *Screen) RowString(row int) string {
 
 var ErrOutOfBounds = errors.New("position of out bounds")
 
-func (s *Screen) GetCell(row, col int) (*ScreenCell, error) {
+func (s *Screen) GetCell(row, col int) *ScreenCell {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if row < 0 || row >= s.rows || col < 0 || col >= s.cols {
-		return nil, ErrOutOfBounds
+		return nil
 	}
 
-	return s.getCell(row, col), nil
+	return s.getCell(row, col)
 }
 
 func (s *Screen) damagePos(p state.Pos) error {
@@ -126,7 +138,7 @@ func (s *Screen) damagePos(p state.Pos) error {
 }
 
 func (s *Screen) damageRect(r state.Rect) error {
-	return s.updates.DamageDone(r)
+	return s.updates.DamageDone(r, cellReader{s})
 }
 
 func (s *Screen) MoveCursor(pos state.Pos) error {

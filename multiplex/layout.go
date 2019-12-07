@@ -6,15 +6,17 @@ import (
 	"github.com/evanphx/vterm/state"
 )
 
+type LayoutElement struct {
+	Position state.Rect
+}
+
 type LayoutColumn struct {
-	Row   int
-	Width int
-	Data  []*LayoutRow
+	LayoutElement
+	Data []*LayoutRow
 }
 
 type LayoutRow struct {
-	Column int
-	Height int
+	LayoutElement
 
 	// This is an or. A row has a term OR a set of columns
 	Data []*LayoutColumn
@@ -28,7 +30,7 @@ type Layout struct {
 
 	Rows, Columns int
 
-	Data []*LayoutRow
+	top *LayoutRow
 
 	focusTerm  *Term
 	focusInput io.Writer
@@ -44,13 +46,15 @@ func NewLayout(m *Multiplexer, t *Term, rows, cols int) (*Layout, error) {
 	l.Operations.l = &l
 
 	row := &LayoutRow{
-		Height: rows,
-		Column: 0,
-		Term:   t,
+		Term: t,
 	}
 
-	l.Data = append(l.Data, row)
+	row.Position = state.Rect{
+		Start: state.Pos{Row: 0, Col: 0},
+		End:   state.Pos{Row: rows - 1, Col: cols - 1},
+	}
 
+	l.top = row
 	l.currentRow = row
 	l.focusTerm = t
 
@@ -73,16 +77,70 @@ func (l *Layout) Write(b []byte) (int, error) {
 }
 
 func (l *Layout) Draw(w io.Writer) error {
-	c1 := l.currentRow.Data[0]
-	c2 := l.currentRow.Data[1]
+	return l.drawRow(l.top)
 
-	r1 := c1.Data[0]
-	r2 := c2.Data[0]
+	/*
+		c1 := l.currentRow.Data[0]
+		c2 := l.currentRow.Data[1]
 
-	l.m.DrawVerticalLine(state.Pos{Row: 0, Col: r2.Column - 1}, l.Rows)
+		r1 := c1.Data[0]
+		r2 := c2.Data[0]
 
-	r1.Term.ResizeMoved(r1.Height, c1.Width, c1.Row, r1.Column)
-	r2.Term.ResizeMoved(r2.Height, c2.Width, c2.Row, r2.Column)
+		l.m.DrawVerticalLine(state.Pos{Row: 0, Col: r2.Column - 1}, l.Rows)
+
+		r1.Term.ResizeMoved(r1.Height, c1.Width, c1.Row, r1.Column)
+		r2.Term.ResizeMoved(r2.Height, c2.Width, c2.Row, r2.Column)
+
+		return nil
+	*/
+}
+
+func (l *Layout) drawRow(r *LayoutRow) error {
+	if r.Term != nil {
+		r.Term.ResizeMoved(r.Position.Height(), r.Position.Width(), r.Position.Start.Row, r.Position.Start.Col)
+		return nil
+	}
+
+	for i, col := range r.Data {
+		err := l.drawColumn(col)
+		if err != nil {
+			return err
+		}
+
+		if i > 0 {
+			pos := col.Position.Start
+			pos.Col--
+			l.m.DrawVerticalLine(pos, col.Position.Height())
+		}
+	}
+
+	/*
+		c1 := l.currentRow.Data[0]
+		c2 := l.currentRow.Data[1]
+
+		r1 := c1.Data[0]
+		r2 := c2.Data[0]
+
+		r1.Term.ResizeMoved(r1.Height, c1.Width, c1.Row, r1.Column)
+		r2.Term.ResizeMoved(r2.Height, c2.Width, c2.Row, r2.Column)
+	*/
+
+	return nil
+}
+
+func (l *Layout) drawColumn(c *LayoutColumn) error {
+	for i, row := range c.Data {
+		err := l.drawRow(row)
+		if err != nil {
+			return err
+		}
+
+		if i > 0 {
+			pos := row.Position.Start
+			pos.Row--
+			l.m.DrawHorizLine(pos, row.Position.Width())
+		}
+	}
 
 	return nil
 }

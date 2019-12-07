@@ -13,7 +13,6 @@ func (p *Parser) readInput(ctx context.Context) {
 		n, err := p.r.Read(buf)
 		if err != nil {
 			close(p.newData)
-			panic(err)
 			return
 		}
 

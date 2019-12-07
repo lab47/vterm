@@ -66,7 +66,7 @@ func (w *Term) Draw() {
 	defer w.damageLock.Unlock()
 
 	for _, r := range w.pendingDamage {
-		w.applyDamage(r)
+		w.applyDamage(r, w.screen)
 	}
 
 	w.pendingDamage = w.pendingDamage[:0]
@@ -102,7 +102,7 @@ func (w *Term) ResizeMoved(rows, cols, rowsOffset, colsOffset int) {
 
 		w.updateUsed()
 
-		w.applyDamage(state.Rect{Start: state.Pos{0, 0}, End: state.Pos{rows - 1, cols - 1}})
+		w.applyDamage(state.Rect{Start: state.Pos{}, End: state.Pos{Row: rows - 1, Col: cols - 1}}, w.screen)
 	}
 }
 
@@ -177,7 +177,6 @@ func (w *Term) begin() error {
 		return err
 	}
 
-	st.Debug = true
 	st.Id = fmt.Sprintf("sub%d", w.id)
 
 	parser, err := parser.NewParser(w.f, st)
@@ -218,13 +217,13 @@ func (w *Term) draw() {
 				if !w.m.inputData.IsZero() {
 					w.m.inputData = time.Time{}
 				}
-				w.applyDamage(r)
+				w.applyDamage(r, w.screen)
 			} else {
 				damage = append(damage, r)
 			}
 		case <-tick.C:
 			for _, r := range damage {
-				w.applyDamage(r)
+				w.applyDamage(r, w.screen)
 			}
 
 			damage = damage[:0]
@@ -240,7 +239,7 @@ func (w *Term) smallRect(r state.Rect) bool {
 	return area < cellThreshold
 }
 
-func (w *Term) DamageDone(r state.Rect) error {
+func (w *Term) DamageDone(r state.Rect, cr screen.CellReader) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -258,7 +257,7 @@ func (w *Term) DamageDone(r state.Rect) error {
 		}
 	*/
 
-	return w.applyDamage(r)
+	return w.applyDamage(r, cr)
 
 	// w.pendingDamage = append(w.pendingDamage, r)
 
@@ -267,7 +266,7 @@ func (w *Term) DamageDone(r state.Rect) error {
 
 var dam sync.Mutex
 
-func (w *Term) applyDamage(r state.Rect) error {
+func (w *Term) applyDamage(r state.Rect, cr screen.CellReader) error {
 	// dam.Lock()
 	// defer dam.Unlock()
 
@@ -285,9 +284,9 @@ func (w *Term) applyDamage(r state.Rect) error {
 		max := -1
 
 		for col := r.Start.Col; col <= r.End.Col; col++ {
-			cell, err := w.screen.GetCell(row, col)
-			if err != nil {
-				return err
+			cell := cr.GetCell(row, col)
+			if cell == nil {
+				continue
 			}
 
 			val, _ := cell.Value()

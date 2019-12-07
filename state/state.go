@@ -16,6 +16,76 @@ type Rect struct {
 	Start, End Pos
 }
 
+func (r Rect) Height() int {
+	return (r.End.Row - r.Start.Row) + 1
+}
+
+func (r Rect) Width() int {
+	return (r.End.Col - r.Start.Col) + 1
+}
+
+// Split the rectangle into two rectangles as columns within the
+// original rectangle. The size of the right rectangle is a +perc+ percentage
+// of the original
+func (s Rect) SplitColumns(perc float32) (Rect, Rect) {
+	width := float32(s.End.Col - s.Start.Col)
+
+	left := s
+	right := s
+
+	right.Start.Col = right.End.Col - int(width*(perc/100.0))
+
+	left.End.Col = right.Start.Col - 1
+
+	return left, right
+}
+
+// Split the rectangle into 2 parts as though we were
+// to run a line down the middle vertically in the original.
+func (s Rect) SplitEvenColumns() (Rect, Rect) {
+	width := (s.End.Col - s.Start.Col) + 1
+
+	left := s
+	right := s
+
+	left.End.Col = left.Start.Col + ((width / 2) - 1)
+
+	right.Start.Col = left.End.Col + 1
+
+	return left, right
+}
+
+// Split the rectangle into two rectangles as rows within the
+// original rectangle. The size of the bottom rectangle is a +perc+ percentage
+// of the original
+func (s Rect) SplitRows(perc float32) (Rect, Rect) {
+	height := float32(s.End.Row - s.Start.Row)
+
+	top := s
+	bottom := s
+
+	bottom.Start.Row = bottom.End.Row - int(height*(perc/100.0))
+
+	top.End.Row = bottom.Start.Row - 1
+
+	return top, bottom
+}
+
+// Split the rectangle into 2 parts as though we were
+// to run a line down the middle horizontally in the original.
+func (s Rect) SplitEvenRows() (Rect, Rect) {
+	height := (s.End.Row - s.Start.Row) + 1
+
+	top := s
+	bottom := s
+
+	top.End.Row = top.Start.Row + ((height / 2) - 1)
+
+	bottom.Start.Row = top.End.Row + 1
+
+	return top, bottom
+}
+
 func (s Rect) ScrollUp(dist int) ScrollRect {
 	x := ScrollRect{Rect: s}
 	x.Direction = ScrollUp
@@ -205,8 +275,7 @@ func (s *State) HandleEvent(gev parser.Event) error {
 
 		return err
 	case *parser.EscapeEvent:
-		// eventually
-		return nil
+		return s.handleEsc(ev)
 	default:
 		return fmt.Errorf("unhandled event type: %T", ev)
 	}
@@ -338,16 +407,22 @@ func (s *State) writeData(ev *parser.TextEvent) error {
 	return s.output.MoveCursor(s.cursor)
 }
 
+func (s *State) emitBell() error {
+	return nil
+}
+
 func (s *State) handleControl(control byte) error {
 	pos := s.cursor
 
 	switch control {
-	case '\b':
+	case 0x7: // BEL
+		return s.emitBell()
+	case 0x8: // BS
 		if pos.Col > 0 {
 			pos.Col--
 		}
 
-	case '\t':
+	case 0x9: // HT
 		pos.Col++
 		for pos.Col < s.cols {
 			if s.tabStops[pos.Col] {
@@ -356,12 +431,31 @@ func (s *State) handleControl(control byte) error {
 
 			pos.Col++
 		}
-	case '\r':
-		pos.Col = 0
-	case '\n', 0xb, 0xc:
+	case 0xa, 0xb, 0xc:
 		pos = s.lineFeed(pos)
+
 		if s.modes.newline {
 			pos.Col = 0
+		}
+	case 0xd:
+		pos.Col = 0
+	case 0x84: // IND
+		pos = s.lineFeed(pos)
+	case 0x85: // NEL
+		pos = s.lineFeed(pos)
+		pos.Col = 0
+	case 0x88: // HTS
+		s.tabStops[pos.Col] = true
+		return nil
+
+	case 0x8d: // synthesized by the parser when handling esc'd 7-bit sequences
+		if pos.Row > s.scrollregion.top {
+			pos.Row--
+		} else {
+			start := Pos{s.scrollregion.top, 0}
+			end := Pos{s.scrollregion.bottom, s.cols - 1}
+
+			return s.output.ScrollRect(Rect{start, end}.ScrollDown(1))
 		}
 	}
 
@@ -1112,6 +1206,22 @@ func (s *State) setTopBottomMargin(ev *parser.CSIEvent) error {
 
 	s.scrollregion.top = top - 1
 	s.scrollregion.bottom = bottom
+
+	return nil
+}
+
+func (s *State) handleEsc(ev *parser.EscapeEvent) error {
+	if len(ev.Data) == 1 {
+		switch ev.Data[0] {
+		case 'M':
+			pos := s.cursor
+			if pos.Row > s.scrollregion.top {
+				pos.Row--
+			}
+
+			s.updateCursor(pos, true)
+		}
+	}
 
 	return nil
 }

@@ -45,7 +45,6 @@ func (s *Screen) Resize(rows, cols int, lines []state.LineInfo) error {
 					copy(cells, prepend)
 					copy(cells[len(prepend):], src.cells)
 					src.cells = cells
-
 				} else {
 					s.buffer.injectLine(row, prepend)
 				}

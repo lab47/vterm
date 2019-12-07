@@ -16,6 +16,8 @@ type EventHandler interface {
 }
 
 type Parser struct {
+	Debug bool
+
 	br      *bufio.Reader
 	plain   bytes.Buffer
 	handler EventHandler

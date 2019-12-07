@@ -23,14 +23,14 @@ type integrationOutput struct {
 	screen *screen.Screen
 }
 
-func (i *integrationOutput) DamageDone(r state.Rect) error {
+func (i *integrationOutput) DamageDone(r state.Rect, cr screen.CellReader) error {
 	return nil
 
 	for row := r.Start.Row; row <= r.End.Row; row++ {
 		for col := r.Start.Col; col <= r.End.Col; col++ {
-			cell, err := i.screen.GetCell(row, col)
-			if err != nil {
-				return err
+			cell := cr.GetCell(row, col)
+			if cell == nil {
+				continue
 			}
 
 			val, _ := cell.Value()
@@ -98,9 +98,10 @@ func TestIntegration(t *testing.T) {
 		var ret string
 
 		for i := 0; i < sz; i++ {
-			cell, err := s.GetCell(row, col+i)
-			if err != nil {
-				return "", err
+			cell := s.GetCell(row, col+i)
+			if cell == nil {
+				ret += " "
+				continue
 			}
 
 			val, _ := cell.Value()
@@ -180,8 +181,85 @@ func TestIntegration(t *testing.T) {
 		assertRange(t, scr, 0, 41, "sh-3.2$ echo 'col2'")
 		assertRange(t, scr, 1, 41, "col2")
 		assertRange(t, scr, 2, 41, "sh-3.2$")
+	})
+
+	n.It("can setup two splits", func(t *testing.T) {
+		var i integrationOutput
+		scr, err := screen.NewScreen(rows, cols, &i)
+		require.NoError(t, err)
+
+		i.screen = scr
+
+		st, err := state.NewState(rows, cols, scr)
+		require.NoError(t, err)
+
+		// st.Debug = true
+
+		r, w := io.Pipe()
+
+		par, err := parser.NewParser(r, st)
+		require.NoError(t, err)
+
+		go par.Drive(context.TODO())
+
+		var m Multiplexer
+		m.out = w
+		m.ti, err = terminfo.LookupTerminfo("ansi")
+		require.NoError(t, err)
+		m.rows = rows
+		m.cols = cols
+
+		m.Config.Shell = []string{"sh"}
+
+		err = m.RunShell()
+		require.NoError(t, err)
+
+		// This is to simulate what happens in the real world,
+		// where the command is sent by the human after the shell
+		// has changed the echo tcattrs. If we don't do this, the
+		// text will be seen echod back by the tty because it will
+		// be processed before the shell has disabled automatic-echo.
+		time.Sleep(50 * time.Millisecond)
+
+		m.HandleInput(TextEvent("echo 'hello'"))
+		m.HandleInput(ControlEvent('\n'))
+
+		m.HandleInput(ControlEvent(0x1))
+
+		time.Sleep(50 * time.Millisecond)
+
+		m.HandleInput(TextEvent("echo 'col2'"))
+		m.HandleInput(ControlEvent('\n'))
+
+		m.HandleInput(ControlEvent(0x1))
+
+		time.Sleep(50 * time.Millisecond)
+
+		m.HandleInput(TextEvent("echo 'col3'"))
+		m.HandleInput(ControlEvent('\n'))
+
+		time.Sleep(time.Second)
 
 		scr.WriteToFile("snap.txt")
+		assertRange(t, scr, 0, 0, "sh-3.2$ echo 'hello'")
+		assertRange(t, scr, 1, 0, "hello")
+		assertRange(t, scr, 2, 0, "sh-3.2$")
+
+		assertRange(t, scr, 0, 40, "│")
+		assertRange(t, scr, 1, 40, "│")
+		assertRange(t, scr, 2, 40, "│")
+
+		assertRange(t, scr, 0, 41, "sh-3.2$ echo 'col2'")
+		assertRange(t, scr, 1, 41, "col2")
+		assertRange(t, scr, 2, 41, "sh-3.2$")
+
+		assertRange(t, scr, 0, 60, "│")
+		assertRange(t, scr, 1, 60, "│")
+		assertRange(t, scr, 2, 60, "│")
+
+		assertRange(t, scr, 0, 61, "sh-3.2$ echo 'col3'")
+		assertRange(t, scr, 1, 61, "col3")
+		assertRange(t, scr, 2, 61, "sh-3.2$")
 	})
 
 	n.Meow()

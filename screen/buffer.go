@@ -94,6 +94,10 @@ func (b *Buffer) getLine(row int) *line {
 }
 
 func (b *Buffer) injectLine(row int, data []ScreenCell) {
+	for i := len(data); i < b.cols; i++ {
+		data = append(data, ScreenCell{})
+	}
+
 	lines := make([]*line, len(b.lines))
 
 	copy(lines, b.lines[1:row])

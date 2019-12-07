@@ -96,6 +96,14 @@ func (o *opSink) Resize(rows, cols int, lines []LineInfo) error {
 	return nil
 }
 
+func (o *opSink) BeginTx() ModifyTx {
+	return o
+}
+
+func (o *opSink) Close() error {
+	return nil
+}
+
 func TestState(t *testing.T) {
 	n := neko.Modern(t)
 

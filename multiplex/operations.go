@@ -21,49 +21,51 @@ func (o *Operations) Split() error {
 	cl := o.l.currentRow
 	term := cl.Term
 
-	width := o.l.Columns / 2
+	left, right := cl.Position.SplitEvenColumns()
+
+	right.Start.Col++
 
 	row1 := &LayoutRow{
-		Column: 0,
-		Height: cl.Height,
-		Term:   cl.Term,
+		Term: cl.Term,
 	}
+
+	row1.Position = left
 
 	term, err := o.spawnTerm()
 	if err != nil {
 		return err
 	}
 
-	rightWidth := width - 1
-
 	row2 := &LayoutRow{
-		Column: width + 1,
-		Height: cl.Height,
-		Term:   term,
+		Term: term,
 	}
 
-	col1 := &LayoutColumn{
-		Width: width,
-	}
+	row2.Position = right
+
+	col1 := &LayoutColumn{}
+
+	col1.Position = row1.Position
 
 	col1.Data = append(col1.Data, row1)
 
-	col2 := &LayoutColumn{
-		Width: rightWidth,
-	}
+	col2 := &LayoutColumn{}
+
+	col2.Position = row2.Position
 
 	col2.Data = append(col2.Data, row2)
 
 	cl.Data = append(cl.Data, col1, col2)
 	cl.Term = nil
 
-	w, err := term.Start(o.l.Rows, width, 0, rightWidth)
+	w, err := term.Start(right.Height(), right.Width(), right.Start.Row, right.Start.Col)
 	if err != nil {
 		return err
 	}
 
 	o.l.focusTerm = term
 	o.l.focusInput = w
+
+	o.l.currentRow = row2
 
 	return o.l.m.Redraw()
 }
