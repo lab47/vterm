@@ -78,21 +78,6 @@ func (l *Layout) Write(b []byte) (int, error) {
 
 func (l *Layout) Draw(w io.Writer) error {
 	return l.drawRow(l.top)
-
-	/*
-		c1 := l.currentRow.Data[0]
-		c2 := l.currentRow.Data[1]
-
-		r1 := c1.Data[0]
-		r2 := c2.Data[0]
-
-		l.m.DrawVerticalLine(state.Pos{Row: 0, Col: r2.Column - 1}, l.Rows)
-
-		r1.Term.ResizeMoved(r1.Height, c1.Width, c1.Row, r1.Column)
-		r2.Term.ResizeMoved(r2.Height, c2.Width, c2.Row, r2.Column)
-
-		return nil
-	*/
 }
 
 func (l *Layout) drawRow(r *LayoutRow) error {
@@ -100,7 +85,12 @@ func (l *Layout) drawRow(r *LayoutRow) error {
 
 	if pos.Row > 0 {
 		pos.Row--
-		l.m.layout.m.DrawHorizLine(pos, r.Position.Width())
+		l.m.DrawHorizLine(pos, r.Position.Width())
+
+		if pos.Col > 0 {
+			pos.Col--
+			l.m.DrawRightTee(pos)
+		}
 	}
 
 	if r.Term != nil {
@@ -114,17 +104,6 @@ func (l *Layout) drawRow(r *LayoutRow) error {
 			return err
 		}
 	}
-
-	/*
-		c1 := l.currentRow.Data[0]
-		c2 := l.currentRow.Data[1]
-
-		r1 := c1.Data[0]
-		r2 := c2.Data[0]
-
-		r1.Term.ResizeMoved(r1.Height, c1.Width, c1.Row, r1.Column)
-		r2.Term.ResizeMoved(r2.Height, c2.Width, c2.Row, r2.Column)
-	*/
 
 	return nil
 }
