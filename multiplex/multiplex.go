@@ -182,9 +182,12 @@ func (m *Multiplexer) HandleInput(ev Event) error {
 	case TextEvent:
 		_, err = m.layout.Write([]byte(ev))
 	case ControlEvent:
-		if ev == 0x1 {
+		switch ev {
+		case 0x1:
 			m.layout.Operations.Split()
-		} else {
+		case 0x2:
+			m.layout.Operations.SplitHoriz()
+		default:
 			_, err = m.layout.Write([]byte{byte(ev)})
 		}
 

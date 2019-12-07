@@ -96,21 +96,22 @@ func (l *Layout) Draw(w io.Writer) error {
 }
 
 func (l *Layout) drawRow(r *LayoutRow) error {
+	pos := r.Position.Start
+
+	if pos.Row > 0 {
+		pos.Row--
+		l.m.layout.m.DrawHorizLine(pos, r.Position.Width())
+	}
+
 	if r.Term != nil {
 		r.Term.ResizeMoved(r.Position.Height(), r.Position.Width(), r.Position.Start.Row, r.Position.Start.Col)
 		return nil
 	}
 
-	for i, col := range r.Data {
+	for _, col := range r.Data {
 		err := l.drawColumn(col)
 		if err != nil {
 			return err
-		}
-
-		if i > 0 {
-			pos := col.Position.Start
-			pos.Col--
-			l.m.DrawVerticalLine(pos, col.Position.Height())
 		}
 	}
 
@@ -129,16 +130,17 @@ func (l *Layout) drawRow(r *LayoutRow) error {
 }
 
 func (l *Layout) drawColumn(c *LayoutColumn) error {
-	for i, row := range c.Data {
+	pos := c.Position.Start
+
+	if pos.Col > 0 {
+		pos.Col--
+		l.m.DrawVerticalLine(pos, c.Position.Height())
+	}
+
+	for _, row := range c.Data {
 		err := l.drawRow(row)
 		if err != nil {
 			return err
-		}
-
-		if i > 0 {
-			pos := row.Position.Start
-			pos.Row--
-			l.m.DrawHorizLine(pos, row.Position.Width())
 		}
 	}
 

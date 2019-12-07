@@ -69,3 +69,56 @@ func (o *Operations) Split() error {
 
 	return o.l.m.Redraw()
 }
+
+func (o *Operations) SplitHoriz() error {
+	cl := o.l.currentRow
+	term := cl.Term
+
+	top, bottom := cl.Position.SplitEvenRows()
+
+	bottom.Start.Row++
+
+	row1 := &LayoutRow{
+		Term: cl.Term,
+	}
+
+	row1.Position = top
+
+	term, err := o.spawnTerm()
+	if err != nil {
+		return err
+	}
+
+	row2 := &LayoutRow{
+		Term: term,
+	}
+
+	row2.Position = bottom
+
+	col1 := &LayoutColumn{}
+
+	col1.Position = row1.Position
+
+	col1.Data = append(col1.Data, row1)
+
+	col2 := &LayoutColumn{}
+
+	col2.Position = row2.Position
+
+	col2.Data = append(col2.Data, row2)
+
+	cl.Data = append(cl.Data, col1, col2)
+	cl.Term = nil
+
+	w, err := term.Start(bottom.Height(), bottom.Width(), bottom.Start.Row, bottom.Start.Col)
+	if err != nil {
+		return err
+	}
+
+	o.l.focusTerm = term
+	o.l.focusInput = w
+
+	o.l.currentRow = row2
+
+	return o.l.m.Redraw()
+}
