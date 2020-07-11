@@ -7,16 +7,16 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/evanphx/vterm/parser"
-	"github.com/evanphx/vterm/pkg/terminfo"
-	"github.com/evanphx/vterm/screen"
-	"github.com/evanphx/vterm/state"
+	"github.com/lab47/vterm/parser"
+	"github.com/lab47/vterm/pkg/terminfo"
+	"github.com/lab47/vterm/screen"
+	"github.com/lab47/vterm/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vektra/neko"
 	"github.com/y0ssar1an/q"
 
-	_ "github.com/evanphx/vterm/pkg/terminfo/a/ansi"
+	_ "github.com/lab47/vterm/pkg/terminfo/a/ansi"
 )
 
 type integrationOutput struct {

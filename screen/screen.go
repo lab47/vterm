@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/evanphx/vterm/state"
+	"github.com/lab47/vterm/state"
 )
 
 type CellReader interface {

@@ -5,7 +5,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/evanphx/vterm/parser"
+	"github.com/lab47/vterm/parser"
 )
 
 type Pos struct {

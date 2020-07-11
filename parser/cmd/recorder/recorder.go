@@ -9,7 +9,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/evanphx/vterm/parser"
+	"github.com/lab47/vterm/parser"
 	"golang.org/x/crypto/ssh/terminal"
 )
 

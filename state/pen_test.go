@@ -3,7 +3,7 @@ package state
 import (
 	"testing"
 
-	"github.com/evanphx/vterm/parser"
+	"github.com/lab47/vterm/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vektra/neko"

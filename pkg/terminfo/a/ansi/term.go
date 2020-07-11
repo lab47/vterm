@@ -2,7 +2,7 @@
 
 package ansi
 
-import "github.com/evanphx/vterm/pkg/terminfo"
+import "github.com/lab47/vterm/pkg/terminfo"
 
 func init() {
 

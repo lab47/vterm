@@ -1,7 +1,7 @@
 package screen
 
 import (
-	"github.com/evanphx/vterm/state"
+	"github.com/lab47/vterm/state"
 )
 
 func (s *Screen) Resize(rows, cols int, lines []state.LineInfo) error {

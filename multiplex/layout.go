@@ -3,7 +3,7 @@ package multiplex
 import (
 	"io"
 
-	"github.com/evanphx/vterm/state"
+	"github.com/lab47/vterm/state"
 )
 
 type LayoutElement struct {

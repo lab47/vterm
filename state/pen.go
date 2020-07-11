@@ -1,7 +1,7 @@
 package state
 
 import (
-	"github.com/evanphx/vterm/parser"
+	"github.com/lab47/vterm/parser"
 )
 
 type IndexColor struct {

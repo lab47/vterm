@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/evanphx/vterm/multiplex"
+	"github.com/lab47/vterm/multiplex"
 	"github.com/pkg/profile"
 )
 

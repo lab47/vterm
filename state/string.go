@@ -3,7 +3,7 @@ package state
 import (
 	"fmt"
 
-	"github.com/evanphx/vterm/parser"
+	"github.com/lab47/vterm/parser"
 )
 
 func (s *State) handleString(ev *parser.StringEvent) error {

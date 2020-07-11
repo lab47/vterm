@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/evanphx/vterm/screen"
-	"github.com/evanphx/vterm/state"
+	"github.com/lab47/vterm/screen"
+	"github.com/lab47/vterm/state"
 )
 
 const DefaultCommandBufferSize = 64 * 1024

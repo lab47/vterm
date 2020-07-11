@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/evanphx/vterm/parser"
-	"github.com/evanphx/vterm/screen"
-	"github.com/evanphx/vterm/state"
+	"github.com/lab47/vterm/parser"
+	"github.com/lab47/vterm/screen"
+	"github.com/lab47/vterm/state"
 	"github.com/y0ssar1an/q"
 )
 

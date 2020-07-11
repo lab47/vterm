@@ -29,7 +29,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/evanphx/vterm/pkg/terminfo"
+	"github.com/lab47/vterm/pkg/terminfo"
 )
 
 type termcap struct {

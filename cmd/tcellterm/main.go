@@ -4,9 +4,9 @@ import (
 	"log"
 	"os/exec"
 
-	"github.com/evanphx/vterm/widget"
 	"github.com/gdamore/tcell"
 	"github.com/gdamore/tcell/views"
+	"github.com/lab47/vterm/widget"
 )
 
 func main() {

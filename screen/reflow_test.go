@@ -3,7 +3,7 @@ package screen
 import (
 	"testing"
 
-	"github.com/evanphx/vterm/state"
+	"github.com/lab47/vterm/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vektra/neko"

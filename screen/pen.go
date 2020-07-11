@@ -1,6 +1,6 @@
 package screen
 
-import "github.com/evanphx/vterm/state"
+import "github.com/lab47/vterm/state"
 
 type ScreenPen struct {
 	state.PenState

@@ -11,10 +11,10 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 
 	"github.com/creack/pty"
-	"github.com/evanphx/vterm/pkg/terminfo"
-	"github.com/evanphx/vterm/pkg/terminfo/dynamic"
-	"github.com/evanphx/vterm/screen"
-	"github.com/evanphx/vterm/state"
+	"github.com/lab47/vterm/pkg/terminfo"
+	"github.com/lab47/vterm/pkg/terminfo/dynamic"
+	"github.com/lab47/vterm/screen"
+	"github.com/lab47/vterm/state"
 	"github.com/y0ssar1an/q"
 )
 
