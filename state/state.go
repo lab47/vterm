@@ -208,7 +208,8 @@ type State struct {
 		top, bottom int
 	}
 
-	lineInfo []LineInfo
+	lineInfo     []LineInfo
+	deferNewline bool
 }
 
 var _ parser.EventHandler = &State{}
@@ -239,6 +240,7 @@ func (s *State) Reset() error {
 			s.tabStops[col] = false
 		}
 	}
+	s.modes.newline = true
 
 	s.scrollregion.top = 0
 	s.scrollregion.bottom = -1
@@ -256,6 +258,10 @@ func (s *State) Resize(rows, cols int) error {
 }
 
 func (s *State) HandleEvent(gev parser.Event) error {
+	if s.deferNewline {
+		s.cursor = s.lineFeed(s.cursor, false)
+	}
+
 	switch ev := gev.(type) {
 	case *parser.TextEvent:
 		return s.writeData(ev)
@@ -290,11 +296,18 @@ func (s *State) scrollBounds() (int, int) {
 	return s.scrollregion.top, bottom
 }
 
-func (s *State) lineFeed(p Pos) Pos {
+func (s *State) lineFeed(p Pos, canDefer bool) Pos {
 	switch {
 	case p.Row < 0:
 		p.Row = 0
-	case p.Row >= s.rows:
+	case p.Row >= s.rows-1:
+		if canDefer && !s.deferNewline {
+			s.deferNewline = true
+			return p
+		}
+
+		s.deferNewline = false
+
 		s.output.ScrollRect(ScrollRect{
 			Rect: Rect{
 				Start: Pos{0, 0},
@@ -376,12 +389,16 @@ func (s *State) writeData(ev *parser.TextEvent) error {
 		width := 1 // TODO find the real width and use it.
 
 		if s.atPhantom || pos.Col+width > s.cols {
-			pos = s.lineFeed(pos)
+			tx.Close()
+
+			pos = s.lineFeed(pos, false)
 			pos.Col = 0
 			s.atPhantom = false
 			if pos.Row < len(s.lineInfo) {
 				s.lineInfo[pos.Row].Continuation = true
 			}
+
+			tx = s.output.BeginTx()
 		}
 
 		s.lastPos = pos
@@ -432,7 +449,7 @@ func (s *State) handleControl(control byte) error {
 			pos.Col++
 		}
 	case 0xa, 0xb, 0xc:
-		pos = s.lineFeed(pos)
+		pos = s.lineFeed(pos, true)
 
 		if s.modes.newline {
 			pos.Col = 0
@@ -440,9 +457,9 @@ func (s *State) handleControl(control byte) error {
 	case 0xd:
 		pos.Col = 0
 	case 0x84: // IND
-		pos = s.lineFeed(pos)
+		pos = s.lineFeed(pos, true)
 	case 0x85: // NEL
-		pos = s.lineFeed(pos)
+		pos = s.lineFeed(pos, true)
 		pos.Col = 0
 	case 0x88: // HTS
 		s.tabStops[pos.Col] = true

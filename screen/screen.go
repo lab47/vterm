@@ -147,10 +147,9 @@ func (s *Screen) MoveCursor(pos state.Pos) error {
 
 func (s *Screen) SetCell(pos state.Pos, val state.CellRune) error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	s.setCell(pos.Row, pos.Col, ScreenCell{val: val.Rune, pen: s.pen})
-
-	s.mu.Unlock()
 
 	return s.damagePos(pos)
 
