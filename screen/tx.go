@@ -53,6 +53,10 @@ func (tx *Tx) AppendCell(pos state.Pos, r rune) error {
 func (tx *Tx) Close() error {
 	tx.s.mu.Unlock()
 
+	if tx.damage == nil {
+		return nil
+	}
+
 	return tx.s.damageRect(*tx.damage)
 }
 
