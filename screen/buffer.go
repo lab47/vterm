@@ -75,6 +75,20 @@ func (l *line) resize(sz int) {
 	l.cells = cells
 }
 
+func (l *line) Runes() []rune {
+	r := make([]rune, 0, l.used)
+
+	for _, c := range l.cells {
+		if c.val == 0 {
+			r = append(r, ' ')
+		} else {
+			r = append(r, c.val)
+		}
+	}
+
+	return r
+}
+
 type Buffer struct {
 	rows, cols int
 	lines      []*line

@@ -21,6 +21,10 @@ type Updates interface {
 	StringEvent(kind string, data []byte) error
 }
 
+type ScrollBack interface {
+	AddScrollBack(row []rune) error
+}
+
 type Screen struct {
 	rows, cols int
 
@@ -32,6 +36,7 @@ type Screen struct {
 	mu sync.Mutex
 
 	updates Updates
+	scroll  ScrollBack
 }
 
 var _ state.Output = &Screen{}
@@ -44,6 +49,10 @@ func NewScreen(rows, cols int, updates Updates) (*Screen, error) {
 
 		buffer: NewBuffer(rows, cols),
 		pen:    &ScreenPen{},
+	}
+
+	if sb, ok := updates.(ScrollBack); ok {
+		screen.scroll = sb
 	}
 
 	return screen, nil
@@ -226,6 +235,16 @@ func (s *Screen) slideRectDown(r state.Rect, dist int) error {
 }
 
 func (s *Screen) slideRectUp(r state.Rect, dist int) error {
+	if r.Start.Row == 1 && r.Start.Col == 0 &&
+		r.End.Col == s.cols-1 &&
+		s.scroll != nil {
+
+		for i := 0; i < dist; i++ {
+			line := s.buffer.getLine(i).Runes()
+			s.scroll.AddScrollBack(line)
+		}
+	}
+
 	cols := r.End.Col - r.Start.Col + 1
 
 	for row := r.Start.Row; row <= r.End.Row; row++ {
