@@ -104,95 +104,105 @@ const (
 
 //go:generate stringer -type=PenAttr
 
+func (s *State) penReset() error {
+	if s.pen.attrs&PenIntensity != PenNormal {
+		s.pen.attrs &= ^PenIntensity
+		err := s.output.SetPenProp(PenAttrIntensity, PenNormal, s.pen)
+		if err != nil {
+			return err
+		}
+	}
+
+	if s.pen.attrs&PenUnderline != PenNormal {
+		s.pen.attrs &= ^PenUnderline
+		err := s.output.SetPenProp(PenAttrUnderline, PenNormal, s.pen)
+		if err != nil {
+			return err
+		}
+	}
+
+	if s.pen.attrs&PenStyle != PenNormal {
+		s.pen.attrs &= ^PenStyle
+		err := s.output.SetPenProp(PenAttrStyle, PenNormal, s.pen)
+		if err != nil {
+			return err
+		}
+	}
+
+	if s.pen.attrs&PenReverse != PenNormal {
+		s.pen.attrs &= ^PenReverse
+		err := s.output.SetPenProp(PenAttrReverse, false, s.pen)
+		if err != nil {
+			return err
+		}
+	}
+
+	if s.pen.attrs&PenStrikeThrough != PenNormal {
+		s.pen.attrs &= ^PenStrikeThrough
+		err := s.output.SetPenProp(PenAttrStrikethrough, false, s.pen)
+		if err != nil {
+			return err
+		}
+	}
+
+	if s.pen.attrs&PenOverlined != PenNormal {
+		s.pen.attrs &= ^PenOverlined
+		err := s.output.SetPenProp(PenAttrOverlined, true, s.pen)
+		if err != nil {
+			return err
+		}
+	}
+
+	if s.pen.attrs&PenWrapper != PenNormal {
+		s.pen.attrs &= ^PenWrapper
+		err := s.output.SetPenProp(PenAttrWrapper, PenNormal, s.pen)
+		if err != nil {
+			return err
+		}
+	}
+
+	s.pen.attrs = 0
+
+	if s.pen.font != 0 {
+		s.pen.font = 0
+		err := s.output.SetPenProp(PenAttrFont, 0, s.pen)
+		if err != nil {
+			return err
+		}
+	}
+
+	s.pen.font = 0
+
+	def := DefaultColor{}
+
+	if s.pen.fgColor != def {
+		s.pen.fgColor = def
+		err := s.output.SetPenProp(PenAttrFGColor, def, s.pen)
+		if err != nil {
+			return err
+		}
+	}
+
+	if s.pen.bgColor != def {
+		s.pen.bgColor = def
+		err := s.output.SetPenProp(PenAttrBGColor, def, s.pen)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (s *State) selectGraphics(ev *parser.CSIEvent) error {
+	if len(ev.Args) < 1 {
+		return s.penReset()
+	}
+
 	arg := ev.Args[0]
 	switch arg {
 	case 0:
-		if s.pen.attrs&PenIntensity != PenNormal {
-			s.pen.attrs &= ^PenIntensity
-			err := s.output.SetPenProp(PenAttrIntensity, PenNormal, s.pen)
-			if err != nil {
-				return err
-			}
-		}
-
-		if s.pen.attrs&PenUnderline != PenNormal {
-			s.pen.attrs &= ^PenUnderline
-			err := s.output.SetPenProp(PenAttrUnderline, PenNormal, s.pen)
-			if err != nil {
-				return err
-			}
-		}
-
-		if s.pen.attrs&PenStyle != PenNormal {
-			s.pen.attrs &= ^PenStyle
-			err := s.output.SetPenProp(PenAttrStyle, PenNormal, s.pen)
-			if err != nil {
-				return err
-			}
-		}
-
-		if s.pen.attrs&PenReverse != PenNormal {
-			s.pen.attrs &= ^PenReverse
-			err := s.output.SetPenProp(PenAttrReverse, false, s.pen)
-			if err != nil {
-				return err
-			}
-		}
-
-		if s.pen.attrs&PenStrikeThrough != PenNormal {
-			s.pen.attrs &= ^PenStrikeThrough
-			err := s.output.SetPenProp(PenAttrStrikethrough, false, s.pen)
-			if err != nil {
-				return err
-			}
-		}
-
-		if s.pen.attrs&PenOverlined != PenNormal {
-			s.pen.attrs &= ^PenOverlined
-			err := s.output.SetPenProp(PenAttrOverlined, true, s.pen)
-			if err != nil {
-				return err
-			}
-		}
-
-		if s.pen.attrs&PenWrapper != PenNormal {
-			s.pen.attrs &= ^PenWrapper
-			err := s.output.SetPenProp(PenAttrWrapper, PenNormal, s.pen)
-			if err != nil {
-				return err
-			}
-		}
-
-		s.pen.attrs = 0
-
-		if s.pen.font != 0 {
-			s.pen.font = 0
-			err := s.output.SetPenProp(PenAttrFont, 0, s.pen)
-			if err != nil {
-				return err
-			}
-		}
-
-		s.pen.font = 0
-
-		def := DefaultColor{}
-
-		if s.pen.fgColor != def {
-			s.pen.fgColor = def
-			err := s.output.SetPenProp(PenAttrFGColor, def, s.pen)
-			if err != nil {
-				return err
-			}
-		}
-
-		if s.pen.bgColor != def {
-			s.pen.bgColor = def
-			err := s.output.SetPenProp(PenAttrBGColor, def, s.pen)
-			if err != nil {
-				return err
-			}
-		}
+		return s.penReset()
 	case 1:
 		if s.pen.attrs&PenIntensity != PenBold {
 			s.pen.attrs &= ^PenIntensity
