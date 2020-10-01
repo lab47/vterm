@@ -203,8 +203,8 @@ func TestState(t *testing.T) {
 			{'\t', Pos{1, 8 * 7}},
 			{'\t', Pos{1, 8 * 8}},
 			{'\t', Pos{1, 8 * 9}},
-			{'\t', Pos{1, 79}},
-			{'\t', Pos{1, 79}},
+			{'\t', Pos{1, 80}},
+			{'\t', Pos{1, 81}},
 		}
 
 		var sink opSink
@@ -698,7 +698,7 @@ func TestState(t *testing.T) {
 
 		assert.True(t, state.modes.insert)
 
-		assert.False(t, state.modes.newline)
+		assert.True(t, state.modes.newline)
 
 		err = state.HandleEvent(&parser.CSIEvent{Command: 'h', Args: []int{20}})
 		require.NoError(t, err)
@@ -951,7 +951,7 @@ func TestState(t *testing.T) {
 		assert.True(t, state.modes.autowrap)
 		assert.False(t, state.modes.cursor)
 		assert.False(t, state.modes.insert)
-		assert.False(t, state.modes.newline)
+		assert.True(t, state.modes.newline)
 		assert.False(t, state.modes.altscreen)
 		assert.False(t, state.modes.origin)
 		assert.False(t, state.modes.leftrightmargin)
